@@ -54,7 +54,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 export function createJavaDocString(description:string, parameter:{string: string}, returnVar: string | undefined, deprecated: string | undefined): String{
 	let o="/**";
 	let splitDescription = [];
-	while(description.length>120){
+	while(description.length>0){
 		splitDescription.push(description.substring(0, Math.min(description.length, 120)));
 		description=description.substring(Math.min(description.length, 120));
 	}
@@ -72,6 +72,3 @@ export function createJavaDocString(description:string, parameter:{string: strin
 // export async function getClassVariables(params:type) {
 	
 // }
-/**
- * 
- */
