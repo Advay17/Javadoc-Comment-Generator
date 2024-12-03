@@ -1,5 +1,6 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
+import { create } from 'domain';
 import * as vscode from 'vscode';
 
 // This method is called when your extension is activated
@@ -60,18 +61,20 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
 export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Array<vscode.DocumentSymbol>){
 	methods.forEach((method) => {
 		if(!activeEditor?.document?.getText(method.range).includes("/**")){
-			let params = [];
+			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
-			let override = (activeEditor?.document?.getText(method.range).includes("@Override"));
+			let override = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
 			if(!method.name.includes("()")){ //This is so janky
 				let identifier = method.name;
 				identifier=identifier.substring(0, ((identifier.indexOf(",")!==-1)? identifier.indexOf(",") : identifier.indexOf(")")));
 				let methodText=activeEditor?.document?.getText(method.range);
 				let paramString=methodText?.substring(methodText.indexOf(identifier));
-				paramString=paramString?.substring(0, paramString.indexOf(")")+1);  
-				console.log(paramString);
+				paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
+				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9]+ +/g, "").split(",");
 			}
-			// console.log(activeEditor?.document?.getText(method.range));
+			let testParamDict: {[id:string]: string} = {};
+			params?.forEach((param) => testParamDict[param]="as");
+			console.log(createJavaDocString("adsf", testParamDict, (returnVar)?"a": undefined, (override)?"o": undefined));
 		}});
 }
 
@@ -83,7 +86,8 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  * @param deprecated If undefined not deprecated, else it links to the alternate method to use.
  * @returns Formatted Javadoc String
  */
-export function createJavaDocString(description:string, parameters:{string: string}, returnVar: string | undefined, deprecated: string | undefined): String{
+export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined): String{
+	console.log("Generating Javadoc String");
 	let o="/**";
 	let splitDescription = [];
 	while(description.length>0){
@@ -98,7 +102,7 @@ export function createJavaDocString(description:string, parameters:{string: stri
 	if(deprecated) {o+=`\n * @deprecated Use {@link ${deprecated}} instead`;}
 
 	o+="\n */";
-	return "";
+	return o;
 }
 
 // export async function getClassVariables(params:type) {
