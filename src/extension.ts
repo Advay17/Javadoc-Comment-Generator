@@ -25,13 +25,16 @@ export function deactivate() {}
  * @param activeEditor VSCode editor used (READ: File edited)
  */
 export async function getMethods(activeEditor: vscode.TextEditor | undefined) {
+	console.log("runs");
 	if(activeEditor){
 		let symbols: Array<vscode.DocumentSymbol> | undefined = await vscode.commands.executeCommand(
 			'vscode.executeDocumentSymbolProvider',
 			activeEditor.document.uri
 		);
+		console.log("runs");
 		if(symbols){
 			let methods: vscode.DocumentSymbol[] = [];
+			console.log("Adding methods to array");
 			symbols.forEach((symbol) => addMethodsToArray(methods, symbol));
 			console.log(methods);
 			methods.reverse();
@@ -63,7 +66,10 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 			if(!method.name.includes("()")){ //This is so janky
 				let identifier = method.name;
 				identifier=identifier.substring(0, ((identifier.indexOf(",")!==-1)? identifier.indexOf(",") : identifier.indexOf(")")));
-				console.log(identifier);
+				let methodText=activeEditor?.document?.getText(method.range);
+				let paramString=methodText?.substring(methodText.indexOf(identifier));
+				paramString=paramString?.substring(0, paramString.indexOf(")")+1);  
+				console.log(paramString);
 			}
 			// console.log(activeEditor?.document?.getText(method.range));
 		}});
