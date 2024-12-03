@@ -70,8 +70,9 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param methods List of different method symbols
  */
 export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Array<vscode.DocumentSymbol>){
-	methods.forEach(async (method) => {
+	for(let method of methods){
 		if(!activeEditor?.document?.getText(method.range).includes("/**")){
+			console.log(method);
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
 			let override = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
@@ -86,9 +87,11 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 			let testParamDict: {[id:string]: string} = {};
 			params?.forEach((param) => testParamDict[param]="as");
 			let methodProperties = await promptUser(method.name, params, returnVar, override);
+			console.log(method);
 			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string);
 			activeEditor?.edit((editBuilder) => {editBuilder.insert(method.range.start, methodDoc)});
-		}});
+		};
+	}
 }
 /**
  * Prompts user for descriptions
@@ -104,21 +107,19 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		prompt: "Description of the method: " + methodName,
 		title: "Description of the method: " + methodName
 	});
-	console.log("test");
-	console.log(methodDesc);
-	console.log("testend");
 	if(!methodDesc) {methodDesc="";}
 	o.push(methodDesc);
+	let paramDict:{[id:string]: string}={};
 	if(params){
-		let paramDict:{[id:string]: string}={};
-		params.forEach(async (param) => {let desc = await vscode.window.showInputBox({
-			prompt: "Description for the parameter: " + param + " of method: " + methodName,
-			title: "Description for the parameter: " + param + " of method: " + methodName
-		}); 
-		if(!desc) {desc="";}
-		paramDict[param] = desc;});
-		o.push(paramDict);
+		for(let param of params){let desc = await vscode.window.showInputBox({
+					prompt: "Description for the parameter: " + param + " of method: " + methodName,
+					title: "Description for the parameter: " + param + " of method: " + methodName
+				}); 
+			if(!desc) {desc="";}
+			paramDict[param] = desc;
+		}
 	}
+	o.push(paramDict);
 	if(returnVar){
 		let desc = await vscode.window.showInputBox({
 				prompt: "Description for the return of method: " + methodName,
