@@ -21,11 +21,20 @@ export function activate(context: vscode.ExtensionContext) {
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+
+export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined){
+	let methods = await getMethods(activeEditor);
+	if(methods){
+		handleMethods(activeEditor, methods);
+	}
+
+}
 /**
  * Gets list of methods as symbols
  * @param activeEditor VSCode editor used (READ: File edited)
  */
-export async function getMethods(activeEditor: vscode.TextEditor | undefined) {
+export async function getMethods(activeEditor: vscode.TextEditor | undefined): Promise<vscode.DocumentSymbol[] | undefined> {
 	console.log("runs");
 	if(activeEditor){
 		let symbols: Array<vscode.DocumentSymbol> | undefined = await vscode.commands.executeCommand(
@@ -39,8 +48,7 @@ export async function getMethods(activeEditor: vscode.TextEditor | undefined) {
 			symbols.forEach((symbol) => addMethodsToArray(methods, symbol));
 			console.log(methods);
 			methods.reverse();
-			handleMethods(activeEditor, methods);
-			console.log("done");
+			return methods;
 		}
 	}
 }
@@ -59,7 +67,7 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param methods List of different method symbols
  */
 export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Array<vscode.DocumentSymbol>){
-	methods.forEach((method) => {
+	methods.forEach(async (method) => {
 		if(!activeEditor?.document?.getText(method.range).includes("/**")){
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
@@ -74,8 +82,52 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 			}
 			let testParamDict: {[id:string]: string} = {};
 			params?.forEach((param) => testParamDict[param]="as");
-			console.log(createJavaDocString("adsf", testParamDict, (returnVar)?"a": undefined, (override)?"o": undefined));
+			let methodProperties = await promptUser(method.name, params, returnVar, override);
+			console.log(createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string));
 		}});
+}
+
+export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined): Promise<({ [id: string]: string; } | string | undefined)[]>{
+	let o=[];
+	let methodDesc = await vscode.window.showInputBox({
+		prompt: "Description of the method: " + methodName,
+		title: "Description of the method: " + methodName
+	});
+	if(!methodDesc) {methodDesc="";}
+	o.push(methodDesc);
+	if(params){
+		let paramDict:{[id:string]: string}={};
+		params.forEach(async (param) => {let desc = await vscode.window.showInputBox({
+			prompt: "Description for the parameter: " + param + " of method: " + methodName,
+			title: "Description for the parameter: " + param + " of method: " + methodName
+		}); 
+		if(!desc) {desc="";}
+		paramDict[param] = desc;});
+		o.push(paramDict);
+	}
+	if(returnVar){
+		let desc = await vscode.window.showInputBox({
+				prompt: "Description for the return" + " of method: " + methodName,
+				title: "Description for the return" + " of method: " + methodName
+		}); 
+		if(!desc) {desc="";}
+		o.push(desc);
+	}
+	else{
+		o.push(undefined);
+	}
+	if(override){
+		let desc = await vscode.window.showInputBox({
+				prompt: "What is the path of the deprecated method?" + " of method: " + methodName,
+				title: "What is the path of the deprecated method?" + " of method: " + methodName
+		}); 
+		if(!desc) {desc="";}
+		o.push(desc);
+	}
+	else{
+		o.push(undefined);
+	}
+	return o;
 }
 
 /**
