@@ -2,6 +2,10 @@
   "name": "javadoc-comment-generator",
   "displayName": "Javadoc Comment Generator",
   "description": "",
+  "repository": {
+    "type": "git",
+    "url": "github.com/Advay17/javadoc-comment-generator"
+  },
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.95.0"
