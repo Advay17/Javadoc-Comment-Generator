@@ -14,7 +14,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('javadoc-comment-generator.helloWorld', () => {getMethods(vscode.window.activeTextEditor);});
+	const disposable = vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => {generateJavadocComments(vscode.window.activeTextEditor);});
 
 	context.subscriptions.push(disposable);
 }
@@ -22,7 +22,10 @@ export function activate(context: vscode.ExtensionContext) {
 // This method is called when your extension is deactivated
 export function deactivate() {}
 
-
+/**
+ * Generates Javadoc Comments
+ * @param activeEditor VSCode editor used (READ: File edited)
+ */
 export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined){
 	let methods = await getMethods(activeEditor);
 	if(methods){
@@ -78,21 +81,32 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				let methodText=activeEditor?.document?.getText(method.range);
 				let paramString=methodText?.substring(methodText.indexOf(identifier));
 				paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
-				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9]+ +/g, "").split(",");
+				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9]+ +/g, "").split(","); //I made that beautiful regex
 			}
 			let testParamDict: {[id:string]: string} = {};
 			params?.forEach((param) => testParamDict[param]="as");
 			let methodProperties = await promptUser(method.name, params, returnVar, override);
-			console.log(createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string));
+			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string);
+			activeEditor?.edit((editBuilder) => {editBuilder.insert(method.range.start, methodDoc)});
 		}});
 }
-
+/**
+ * Prompts user for descriptions
+ * @param methodName Name of method
+ * @param params List of params
+ * @param returnVar Boolean that if true, indicates that the method returns a value
+ * @param override Boolean that if true, indicates that the method returns a value
+ * @returns Array of descriptions
+ */
 export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
 	let methodDesc = await vscode.window.showInputBox({
 		prompt: "Description of the method: " + methodName,
 		title: "Description of the method: " + methodName
 	});
+	console.log("test");
+	console.log(methodDesc);
+	console.log("testend");
 	if(!methodDesc) {methodDesc="";}
 	o.push(methodDesc);
 	if(params){
@@ -107,8 +121,8 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	}
 	if(returnVar){
 		let desc = await vscode.window.showInputBox({
-				prompt: "Description for the return" + " of method: " + methodName,
-				title: "Description for the return" + " of method: " + methodName
+				prompt: "Description for the return of method: " + methodName,
+				title: "Description for the return of method: " + methodName
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
@@ -118,8 +132,8 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	}
 	if(override){
 		let desc = await vscode.window.showInputBox({
-				prompt: "What is the path of the deprecated method?" + " of method: " + methodName,
-				title: "What is the path of the deprecated method?" + " of method: " + methodName
+				prompt: "What is the path of the alternative method of method: " + methodName,
+				title: "What is the path of the deprecated method? of method: " + methodName
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
@@ -138,14 +152,14 @@ export async function promptUser(methodName:string, params: string[] | undefined
  * @param deprecated If undefined not deprecated, else it links to the alternate method to use.
  * @returns Formatted Javadoc String
  */
-export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined): String{
+export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined): string{
 	console.log("Generating Javadoc String");
 	let o="/**";
 	let splitDescription = [];
-	while(description.length>0){
+	do {
 		splitDescription.push(description.substring(0, Math.min(description.length, 120)));
 		description=description.substring(Math.min(description.length, 120));
-	}
+	} while (description.length>0);
 	splitDescription.forEach((descriptionSection) => o+="\n * "+descriptionSection);
 	Object.entries(parameters).forEach(
 		([name, desc]) => o+=`\n * @param ${name} ${desc}`
@@ -153,7 +167,7 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	if(returnVar) {o+=`\n * @return ${returnVar}`;}
 	if(deprecated) {o+=`\n * @deprecated Use {@link ${deprecated}} instead`;}
 
-	o+="\n */";
+	o+="\n */\n";
 	return o;
 }
 

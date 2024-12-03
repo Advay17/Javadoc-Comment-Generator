@@ -14,8 +14,8 @@
   "contributes": {
     "commands": [
       {
-        "command": "javadoc-comment-generator.helloWorld",
-        "title": "Hello World"
+        "command": "javadoc-comment-generator.generateCommentsForFile",
+        "title": "Generate Comments for File"
       }
     ]
   },
