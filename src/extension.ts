@@ -87,7 +87,6 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 			let testParamDict: {[id:string]: string} = {};
 			params?.forEach((param) => testParamDict[param]="as");
 			let methodProperties = await promptUser(method.name, params, returnVar, override);
-			console.log(method);
 			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string);
 			activeEditor?.edit((editBuilder) => {editBuilder.insert(method.range.start, methodDoc)});
 		};
@@ -165,8 +164,8 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	Object.entries(parameters).forEach(
 		([name, desc]) => o+=`\n * @param ${name} ${desc}`
 	);
-	if(returnVar) {o+=`\n * @return ${returnVar}`;}
-	if(deprecated) {o+=`\n * @deprecated Use {@link ${deprecated}} instead`;}
+	if(returnVar!=undefined) {o+=`\n * @return ${returnVar}`;}
+	if(deprecated!=undefined) {o+=`\n * @deprecated Use {@link ${deprecated}} instead`;}
 
 	o+="\n */\n";
 	return o;
