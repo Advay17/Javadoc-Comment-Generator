@@ -68,7 +68,7 @@ export async function getMethods(activeEditor: vscode.TextEditor | undefined): P
  * @param symbol Current symbol examined(class or enum)
  */
 export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol: vscode.DocumentSymbol){
-	symbol.children.filter((child) => [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(child.kind)).forEach((method) => methods.push(method));
+	symbol.children.filter((child) => [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(child.kind) && !methods.includes(child)).forEach((method) => methods.push(method));
 	symbol.children.filter((child) => [vscode.SymbolKind.Class, vscode.SymbolKind.Enum].includes(child.kind)).forEach((child) => addMethodsToArray(methods, child));
 }
 /**
@@ -181,7 +181,13 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 }
 
 export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined){
-
+	let classText = activeEditor?.document.getText() as string;
+	let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
+	activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
+							activeEditor?.document.positionAt(match.index) as vscode.Position, 
+							activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
+	// console.log(position);
+	// console.log(activeEditor?.document.getWordRangeAtPosition(position as vscode.Position));
 }
 
 // export async function getClassVariables(params:type) {
