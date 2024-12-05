@@ -27,6 +27,16 @@
       }
     ]
   },
+  "configuration": {
+    "title": "Javadoc Comment Generator",
+    "properties": {
+      "javadoc-comment-generator.includeOverridingMethods": {
+        "type": "boolean",
+        "default": "true",
+        "description": "Determines if overriding methods should still have comments generated."
+      }
+    }
+  },
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
@@ -45,5 +55,8 @@
     "typescript": "^5.6.3",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1"
-  }
+  },
+    "extensionDependencies": [
+        "redhat.java"
+  ]
 }

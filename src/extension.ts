@@ -2,7 +2,6 @@
 // Import the module and reference it with the alias vscode in your code below
 import { create } from 'domain';
 import * as vscode from 'vscode';
-
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -32,28 +31,38 @@ export function deactivate() {}
 export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined){
 	let methods = await getMethods(activeEditor);
 	if(methods){
-		handleMethods(activeEditor, methods);
+		handleMethods(activeEditor, new Set(methods));
 	}
 
 }
+/**
+ * Deletes all javadoc comments in a file
+ * @param activeEditor VSCode editor used (READ: File edited)
+ */
+export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined){
+	let classText = activeEditor?.document.getText() as string;
+	let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
+	activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
+							activeEditor?.document.positionAt(match.index) as vscode.Position, 
+							activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
+}
+
 /**
  * Gets list of methods as symbols
  * @param activeEditor VSCode editor used (READ: File edited)
  */
 export async function getMethods(activeEditor: vscode.TextEditor | undefined): Promise<vscode.DocumentSymbol[] | undefined> {
-	console.log("runs");
 	if(activeEditor){
 		let symbols: Array<vscode.DocumentSymbol> = await vscode.commands.executeCommand(
 			'vscode.executeDocumentSymbolProvider',
 			activeEditor.document.uri
 		);
-		console.log("symbols:" + symbols);
 		if(symbols){
-			console.log("runs");
 			let methods: vscode.DocumentSymbol[] = [];
-			console.log("Adding methods to array");
-			symbols.forEach((symbol) => addMethodsToArray(methods, symbol));
-			console.log(methods);
+			let classNames: string[] = [];
+			symbols=symbols.filter((child) => {if(classNames.includes(child.name)) {return false;} classNames.push(child.name); return [vscode.SymbolKind.Class, vscode.SymbolKind.Enum].includes(child.kind);});
+			console.log(classNames);
+			symbols.forEach((symbol) => {classNames.push(symbol.name); addMethodsToArray(methods, symbol);});
 			methods.reverse();
 			return methods;
 		}
@@ -68,7 +77,7 @@ export async function getMethods(activeEditor: vscode.TextEditor | undefined): P
  * @param symbol Current symbol examined(class or enum)
  */
 export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol: vscode.DocumentSymbol){
-	symbol.children.filter((child) => [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(child.kind) && !methods.includes(child)).forEach((method) => methods.push(method));
+	symbol.children.filter((child) => [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(child.kind)).forEach((method) => methods.push(method));
 	symbol.children.filter((child) => [vscode.SymbolKind.Class, vscode.SymbolKind.Enum].includes(child.kind)).forEach((child) => addMethodsToArray(methods, child));
 }
 /**
@@ -76,9 +85,10 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param activeEditor VSCode editor used (READ: File edited)
  * @param methods List of different method symbols
  */
-export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Array<vscode.DocumentSymbol>){
+export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>){
+	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods"));
 	for(let method of methods){
-		if(!activeEditor?.document?.getText(method.range).includes("/**")){
+		if(!activeEditor?.document?.getText(method.range).includes("/**") && (vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")!=="true" || !activeEditor?.document?.getText(method.range).includes("@Override"))){
 			console.log(method);
 			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
@@ -162,7 +172,6 @@ export async function promptUser(methodName:string, params: string[] | undefined
  */
 export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string): string{
 	console.log("Generating Javadoc String");
-	console.log(indent);
 	let o="/**";
 	let splitDescription = [];
 	do {
@@ -178,16 +187,6 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 
 	o+="\n"+indent+" */\n"+indent;
 	return o;
-}
-
-export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined){
-	let classText = activeEditor?.document.getText() as string;
-	let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
-	activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
-							activeEditor?.document.positionAt(match.index) as vscode.Position, 
-							activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
-	// console.log(position);
-	// console.log(activeEditor?.document.getWordRangeAtPosition(position as vscode.Position));
 }
 
 // export async function getClassVariables(params:type) {
