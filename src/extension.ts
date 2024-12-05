@@ -43,18 +43,22 @@ export async function generateJavadocComments(activeEditor: vscode.TextEditor | 
 export async function getMethods(activeEditor: vscode.TextEditor | undefined): Promise<vscode.DocumentSymbol[] | undefined> {
 	console.log("runs");
 	if(activeEditor){
-		let symbols: Array<vscode.DocumentSymbol> | undefined = await vscode.commands.executeCommand(
+		let symbols: Array<vscode.DocumentSymbol> = await vscode.commands.executeCommand(
 			'vscode.executeDocumentSymbolProvider',
 			activeEditor.document.uri
 		);
-		console.log("runs");
+		console.log("symbols:" + symbols);
 		if(symbols){
+			console.log("runs");
 			let methods: vscode.DocumentSymbol[] = [];
 			console.log("Adding methods to array");
 			symbols.forEach((symbol) => addMethodsToArray(methods, symbol));
 			console.log(methods);
 			methods.reverse();
 			return methods;
+		}
+		else {
+			vscode.window.showInformationMessage("Wait for a few more seconds!");
 		}
 	}
 }
