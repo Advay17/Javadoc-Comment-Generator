@@ -20,6 +20,10 @@
       {
         "command": "javadoc-comment-generator.generateCommentsForFile",
         "title": "Generate Comments for File"
+      },
+      {
+        "command": "javadoc-comment-generator.deleteJavaDocComments",
+        "title": "Delete all Javadoc Comments in File"
       }
     ]
   },

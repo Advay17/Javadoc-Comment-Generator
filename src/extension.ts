@@ -14,9 +14,12 @@ export function activate(context: vscode.ExtensionContext) {
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => {generateJavadocComments(vscode.window.activeTextEditor);});
+	const commands = [
+		vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor)),
+		vscode.commands.registerCommand('javadoc-comment-generator.deleteJavaDocComments', () => deleteJavaDocComments(vscode.window.activeTextEditor))
+	];
 
-	context.subscriptions.push(disposable);
+	commands.forEach((command) => context.subscriptions.push(command));
 }
 
 // This method is called when your extension is deactivated
@@ -171,6 +174,10 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 
 	o+="\n"+indent+" */\n"+indent;
 	return o;
+}
+
+export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined){
+
 }
 
 // export async function getClassVariables(params:type) {
