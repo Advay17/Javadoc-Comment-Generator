@@ -73,6 +73,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 	for(let method of methods){
 		if(!activeEditor?.document?.getText(method.range).includes("/**")){
 			console.log(method);
+			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
 			let override = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
@@ -82,13 +83,13 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				let methodText=activeEditor?.document?.getText(method.range);
 				let paramString=methodText?.substring(methodText.indexOf(identifier));
 				paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
-				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9]+ +/g, "").split(","); //I made that beautiful regex
+				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
 			}
 			let testParamDict: {[id:string]: string} = {};
 			params?.forEach((param) => testParamDict[param]="as");
 			let methodProperties = await promptUser(method.name, params, returnVar, override);
-			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string);
-			activeEditor?.edit((editBuilder) => {editBuilder.insert(method.range.start, methodDoc)});
+			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
+			activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
 		};
 	}
 }
@@ -152,22 +153,23 @@ export async function promptUser(methodName:string, params: string[] | undefined
  * @param deprecated If undefined not deprecated, else it links to the alternate method to use.
  * @returns Formatted Javadoc String
  */
-export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined): string{
+export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string): string{
 	console.log("Generating Javadoc String");
+	console.log(indent);
 	let o="/**";
 	let splitDescription = [];
 	do {
 		splitDescription.push(description.substring(0, Math.min(description.length, 120)));
 		description=description.substring(Math.min(description.length, 120));
 	} while (description.length>0);
-	splitDescription.forEach((descriptionSection) => o+="\n * "+descriptionSection);
+	splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
 	Object.entries(parameters).forEach(
-		([name, desc]) => o+=`\n * @param ${name} ${desc}`
+		([name, desc]) => o+=`\n${indent} * @param ${name} ${desc}`
 	);
-	if(returnVar!=undefined) {o+=`\n * @return ${returnVar}`;}
-	if(deprecated!=undefined) {o+=`\n * @deprecated Use {@link ${deprecated}} instead`;}
+	if(returnVar!==undefined) {o+=`\n${indent} * @return ${returnVar}`;}
+	if(deprecated!==undefined) {o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;}
 
-	o+="\n */\n";
+	o+="\n"+indent+" */\n"+indent;
 	return o;
 }
 
