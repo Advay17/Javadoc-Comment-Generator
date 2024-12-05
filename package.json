@@ -25,15 +25,15 @@
         "command": "javadoc-comment-generator.deleteJavaDocComments",
         "title": "Delete all Javadoc Comments in File"
       }
-    ]
-  },
-  "configuration": {
-    "title": "Javadoc Comment Generator",
-    "properties": {
-      "javadoc-comment-generator.includeOverridingMethods": {
-        "type": "boolean",
-        "default": "true",
-        "description": "Determines if overriding methods should still have comments generated."
+    ],
+    "configuration": {
+      "title": "Javadoc Comment Generator",
+      "properties": {
+        "javadoc-comment-generator.includeOverridingMethods": {
+          "type": "boolean",
+          "default": "true",
+          "description": "Determines if overriding methods should still have comments generated."
+        }
       }
     }
   },
