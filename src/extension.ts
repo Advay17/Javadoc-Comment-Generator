@@ -11,8 +11,10 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "javadoc-comment-generator" is now active!');
 	let chatGPT:OpenAI;
+	// console.log("chatgpt" + vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion"));
 	if(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"){
 		chatGPT = new OpenAI({apiKey:vscode.workspace.getConfiguration().get("javadoc-comment-generator.openAIKey")});
+		console.log("gpt:" + chatGPT);
 	}
 
 	// The command has been defined in the package.json file
@@ -142,16 +144,18 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		title: "Description of the method: " + methodName,
 		placeHolder:  (chatGPT)? "":""
 	});
-	console.log((await chatGPT.chat.completions.create({
-		model: "gpt-4o-mini",
-		messages: [
-			{ role: "system", content: "You are a highly skilled developer and documentation expert. I will provide you with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
-			{
-				role: "user",
-				content: `Write a description of the following method:\n${methodText}`,
-			},
-		],
-	})).choices[0].message);
+	if(chatGPT){
+		console.log((await chatGPT.chat.completions.create({
+			model: "gpt-4o-mini",
+			messages: [
+				{ role: "system", content: "You are a highly skilled developer and documentation expert. I will provide you with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
+				{
+					role: "user",
+					content: `Write a description of the following method:\n${methodText}`,
+				},
+			],
+		})).choices[0].message);
+	}
 	if(!methodDesc) {methodDesc="";}
 	o.push(methodDesc);
 	let paramDict:{[id:string]: string}={};
