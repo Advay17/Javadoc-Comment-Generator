@@ -22,6 +22,10 @@
         "title": "Generate Comments for File"
       },
       {
+        "command": "javadoc-comment-generator.generateCommentsForFile",
+        "title": "Generate Blank Comments for File"
+      },
+      {
         "command": "javadoc-comment-generator.deleteJavaDocComments",
         "title": "Delete all Javadoc Comments in File"
       }
@@ -33,6 +37,16 @@
           "type": "boolean",
           "default": "true",
           "description": "Determines if overriding methods should still have comments generated."
+        },
+        "javadoc-comment-generator.generateCommentsForMainMethod":{
+          "type": "boolean",
+          "default": "false",
+          "description": "Determines if comments should be generated for the main method."
+        },
+        "javadoc-comment-generator.generateAISuggestion":{
+          "type": "boolean",
+          "default": "false",
+          "description": "Determines if AI suggestions for descriptions should be shown."
         }
       }
     }

@@ -28,10 +28,10 @@ export function deactivate() {}
  * Generates Javadoc Comments
  * @param activeEditor VSCode editor used (READ: File edited)
  */
-export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined){
+export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, generateBlanks=false){
 	let methods = await getMethods(activeEditor);
 	if(methods){
-		handleMethods(activeEditor, new Set(methods));
+		handleMethods(activeEditor, new Set(methods), generateBlanks);
 	}
 
 }
@@ -40,11 +40,13 @@ export async function generateJavadocComments(activeEditor: vscode.TextEditor | 
  * @param activeEditor VSCode editor used (READ: File edited)
  */
 export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined){
-	let classText = activeEditor?.document.getText() as string;
-	let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
-	activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
-							activeEditor?.document.positionAt(match.index) as vscode.Position, 
-							activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
+	if(activeEditor){
+		let classText = activeEditor?.document.getText() as string;
+		let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
+		activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
+								activeEditor?.document.positionAt(match.index) as vscode.Position, 
+								activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
+	}
 }
 
 /**
@@ -85,10 +87,10 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param activeEditor VSCode editor used (READ: File edited)
  * @param methods List of different method symbols
  */
-export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>){
+export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: boolean){
 	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods"));
 	for(let method of methods){
-		if(!activeEditor?.document?.getText(method.range).includes("/**") && (vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")!=="true" || !activeEditor?.document?.getText(method.range).includes("@Override"))){
+		if(!activeEditor?.document?.getText(method.range).includes("/**") && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")==="true" && activeEditor?.document?.getText(method.range).includes("@Override")) && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod")==="true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))){
 			console.log(method);
 			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
@@ -102,10 +104,19 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
 				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
 			}
-			let testParamDict: {[id:string]: string} = {};
-			params?.forEach((param) => testParamDict[param]="as");
-			let methodProperties = await promptUser(method.name, params, returnVar, override);
-			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
+			let methodDoc;
+			if(generateBlanks){
+				let blankParamDict: {[id:string]: string} = {};
+				for(let param of params as string[]){
+					blankParamDict[param] = "";
+				}
+				methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (override)? "": undefined, indent as string);
+				
+			}
+			else{
+				let methodProperties = await promptUser(method.name, params, returnVar, override);
+				methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
+			}
 			activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
 		};
 	}
