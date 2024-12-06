@@ -108,7 +108,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
-			let override = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
+			let deprecated = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
 			if(!method.name.includes("()")){ //This is so janky
 				params=listParams(method.name, activeEditor?.document?.getText(method.range) as string);
 			}
@@ -118,11 +118,11 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				for(let param of params as string[]){
 					blankParamDict[param] = "";
 				}
-				methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (override)? "": undefined, indent as string);
+				methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (deprecated)? "": undefined, indent as string);
 				console.log(methodDoc);
 			}
 			else{
-				let methodProperties = await promptUser(method.name, params, returnVar, override, chatGPT, activeEditor?.document.getText(method.range) as string);
+				let methodProperties = await promptUser(method.name, params, returnVar, deprecated, chatGPT, activeEditor?.document.getText(method.range) as string);
 				methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
 			}
 			await activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
@@ -147,13 +147,13 @@ export function listParams(identifier:string, methodText:string): string[] {
  * @param methodName Name of method
  * @param params List of params
  * @param returnVar Boolean that if true, indicates that the method returns a value
- * @param override Boolean that if true, indicates that the method returns a value
+ * @param deprecated Boolean that if true, indicates that the method is deprecated
  * @param chatGPT OpenAI client to generate suggested descriptions
  * @param methodText Full text of the method
  * @param promptMainDesc Boolean that if true, indicates that the main method description should have a comment generated
  * @returns Array of descriptions
  */
-export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined, 
+export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, deprecated:boolean | undefined, 
 								chatGPT:OpenAI, methodText:string, promptMainDesc = true): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
 	if(promptMainDesc){
@@ -193,10 +193,10 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	else{
 		o.push(undefined);
 	}
-	if(override){
+	if(deprecated){
 		let desc = await vscode.window.showInputBox({
 				prompt: "What is the path of the alternative method of method: " + methodName,
-				title: "What is the path of the alternative method? of method: " + methodName
+				title: "What is the path of the alternative method of method: " + methodName
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
@@ -211,7 +211,7 @@ export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<stri
 	return (await chatGPT.chat.completions.create({
 				model: "gpt-4o-mini",
 				messages: [
-					{ role: "system", content: "You are a highly skilled developer and documentation expert. I will provide you with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
+					{ role: "system", content: "You are a highly skilled developer and documentation expert. You will be provided with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
 					{
 						role: "user",
 						content: prompt,
@@ -252,26 +252,34 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	return o;
 }
 
-export function checkJavaDocComment(comment:string, properties:MethodProperties){
+export function checkJavaDocComment(comment:string, properties:MethodProperties): CheckResults{
+	let c = new CheckResults();
+	return c;
 }
 
 class MethodProperties {
-	parameters: string[];
-	returnVar: boolean;
-	deprecated: boolean;
-	constructor(parameters: string[], returnVar: boolean, deprecated: boolean){
-		this.parameters=parameters;
-		this.returnVar=returnVar;
-		this.deprecated=deprecated;
+	parameters: string[] = [];
+	returnVar: boolean = false;
+	deprecated: boolean = false;
+	constructor(method: vscode.DocumentSymbol, activeEditor: vscode.TextEditor){
+		this.parameters=listParams(method.name, activeEditor.document.getText(method.range));
+		this.returnVar=!(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);;
+		this.deprecated=(activeEditor?.document?.getText(method.range).includes("@Deprecated"));
 	}
 }
-
-class checkResults {
-	mainComment: boolean;
-	parameters: boolean[][];
-	returnVar: boolean[];
-	deprecated: boolean[];
-	constructor(mainComment: boolean, parameters: boolean[][], returnVar: boolean[], deprecated: boolean[]){
+enum Results{
+	Correct,
+	Missing,
+	Blank,
+	Extra,
+	Unchecked
+}
+class CheckResults {
+	mainComment: Results = Results.Unchecked;
+	parameters: Results[] = [];
+	returnVar: Results = Results.Unchecked;
+	deprecated: Results = Results.Unchecked;
+	constructor(mainComment = Results.Unchecked, parameters = [], returnVar = Results.Unchecked, deprecated = Results.Unchecked){
 		this.mainComment=mainComment;
 		this.parameters=parameters;
 		this.returnVar=returnVar;
