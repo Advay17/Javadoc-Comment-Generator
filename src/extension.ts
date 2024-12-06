@@ -1,6 +1,7 @@
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import { create } from 'domain';
+import OpenAI from 'openai';
 import * as vscode from 'vscode';
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -162,7 +163,7 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	if(override){
 		let desc = await vscode.window.showInputBox({
 				prompt: "What is the path of the alternative method of method: " + methodName,
-				title: "What is the path of the deprecated method? of method: " + methodName
+				title: "What is the path of the alternative method? of method: " + methodName
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
