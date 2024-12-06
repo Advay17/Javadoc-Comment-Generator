@@ -42,13 +42,13 @@
         "javadoc-comment-generator.generateCommentsForMainMethod": {
           "title": "Generate Comments for Main Method",
           "type": "boolean",
-          "default": "false",
+          "default": "true",
           "description": "Determines if comments should be generated for the main method."
         },
         "javadoc-comment-generator.generateAISuggestion": {
           "title": "Generate AI Suggestions",
           "type": "boolean",
-          "default": "true",
+          "default": "false",
           "description": "Determines if AI suggestions for descriptions should be shown."
         },
         "javadoc-comment-generator.openAIKey": {

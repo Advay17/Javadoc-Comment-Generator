@@ -34,6 +34,8 @@ export function deactivate() {}
 /**
  * Generates Javadoc Comments
  * @param activeEditor VSCode editor used (READ: File edited)
+ * @param chatGPT OpenAI client for generating comment suggestions
+ * @param generateBlanks Boolean that if true, dictates that blank comments must be made
  */
 export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI, generateBlanks=false){
 	let methods = await getMethods(activeEditor);
@@ -50,9 +52,9 @@ export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefine
 	if(activeEditor){
 		let classText = activeEditor?.document.getText() as string;
 		let matches = [... classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
-		activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.replace(new vscode.Range(
+		activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.delete(new vscode.Range(
 								activeEditor?.document.positionAt(match.index) as vscode.Position, 
-								activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position), "")));
+								activeEditor?.document.positionAt(match.index+match[0].toString().length) as vscode.Position))));
 	}
 }
 
@@ -70,9 +72,9 @@ export async function getMethods(activeEditor: vscode.TextEditor | undefined): P
 			let methods: vscode.DocumentSymbol[] = [];
 			let classNames: string[] = [];
 			symbols=symbols.filter((child) => {if(classNames.includes(child.name)) {return false;} classNames.push(child.name); return [vscode.SymbolKind.Class, vscode.SymbolKind.Enum].includes(child.kind);});
-			console.log(classNames);
 			symbols.forEach((symbol) => {classNames.push(symbol.name); addMethodsToArray(methods, symbol);});
 			methods.reverse();
+			console.log(methods);
 			return methods;
 		}
 		else {
@@ -93,23 +95,22 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * For each method, generates and inserts a javadoc string. Iterates in reverse order to prevent messing up of ranges.
  * @param activeEditor VSCode editor used (READ: File edited)
  * @param methods List of different method symbols
+ * @param generateBlanks Determines if the comments should all be blanks
+ * @param chatGPT OpenAI object to generate comments
  */
 export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: boolean, chatGPT:OpenAI){
-	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods"));
 	for(let method of methods){
-		if(!activeEditor?.document?.getText(method.range).includes("/**") && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")==="true" && activeEditor?.document?.getText(method.range).includes("@Override")) && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod")==="true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))){
+		if(!activeEditor?.document?.getText(method.range).includes("/**") &&
+		 !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")==="true" && activeEditor?.document?.getText(method.range).includes("@Override")) && 
+		 !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod")==="true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))
+		){
 			console.log(method);
 			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
 			let override = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
 			if(!method.name.includes("()")){ //This is so janky
-				let identifier = method.name;
-				identifier=identifier.substring(0, ((identifier.indexOf(",")!==-1)? identifier.indexOf(",") : identifier.indexOf(")")));
-				let methodText=activeEditor?.document?.getText(method.range);
-				let paramString=methodText?.substring(methodText.indexOf(identifier));
-				paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
-				params=paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
+				params=listParams(method.name, activeEditor?.document?.getText(method.range) as string);
 			}
 			let methodDoc;
 			if(generateBlanks){
@@ -118,15 +119,28 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 					blankParamDict[param] = "";
 				}
 				methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (override)? "": undefined, indent as string);
-				
+				console.log(methodDoc);
 			}
 			else{
 				let methodProperties = await promptUser(method.name, params, returnVar, override, chatGPT, activeEditor?.document.getText(method.range) as string);
 				methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
 			}
-			activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
+			await activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
 		};
 	}
+}
+
+/**
+ * Converts the method name and the method text into a list of parameter names for javadoc generation.
+ * @param identifier Name of method, used to determine start of method header
+ * @param methodText Full method text
+ * @returns Array of parameter names 
+ */
+export function listParams(identifier:string, methodText:string): string[] {
+	identifier=identifier.substring(0, ((identifier.indexOf(",")!==-1)? identifier.indexOf(",") : identifier.indexOf(")")));
+	let paramString=methodText?.substring(methodText.indexOf(identifier));
+	paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
+	return paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
 }
 /**
  * Prompts user for descriptions
@@ -134,20 +148,29 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  * @param params List of params
  * @param returnVar Boolean that if true, indicates that the method returns a value
  * @param override Boolean that if true, indicates that the method returns a value
+ * @param chatGPT OpenAI client to generate suggested descriptions
+ * @param methodText Full text of the method
+ * @param promptMainDesc Boolean that if true, indicates that the main method description should have a comment generated
  * @returns Array of descriptions
  */
-export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined, chatGPT:OpenAI, methodText:string): Promise<({ [id: string]: string; } | string | undefined)[]>{
+export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined, 
+								chatGPT:OpenAI, methodText:string, promptMainDesc = true): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
-	let methodDesc = await vscode.window.showInputBox({
-		prompt: "Description of the method: " + methodName,
-		title: "Description of the method: " + methodName,
-		placeHolder:  (chatGPT)? "":""
-	});
-	if(chatGPT){
-		console.log(promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT));
+	if(promptMainDesc){
+		let methodDesc = await vscode.window.showInputBox({
+			prompt: "Description of the method: " + methodName,
+			title: "Description of the method: " + methodName,
+			placeHolder:  (chatGPT)? await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT):""
+		});
+		if(chatGPT){
+			console.log(promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT));
+		}
+		if(!methodDesc) {methodDesc="";}
+		o.push(methodDesc);
 	}
-	if(!methodDesc) {methodDesc="";}
-	o.push(methodDesc);
+	else{
+		o.push(undefined);
+	}
 	let paramDict:{[id:string]: string}={};
 	if(params){
 		for(let param of params){let desc = await vscode.window.showInputBox({
@@ -208,12 +231,17 @@ export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<stri
 export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string): string{
 	console.log("Generating Javadoc String");
 	let o="/**";
-	let splitDescription = [];
-	do {
-		splitDescription.push(description.substring(0, Math.min(description.length, 120)));
-		description=description.substring(Math.min(description.length, 120));
-	} while (description.length>0);
-	splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
+	if(description!==undefined){
+		let splitDescription = [];
+		do {
+			splitDescription.push(description.substring(0, Math.min(description.length, 120)));
+			description=description.substring(Math.min(description.length, 120));
+		} while (description.length>0);
+		splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
+	}
+	else{
+		o+="\n"+indent+" * ";
+	}
 	Object.entries(parameters).forEach(
 		([name, desc]) => o+=`\n${indent} * @param ${name} ${desc}`
 	);
@@ -222,6 +250,43 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 
 	o+="\n"+indent+" */\n"+indent;
 	return o;
+}
+
+export function checkJavaDocComment(comment:string, properties:MethodProperties){
+}
+
+class MethodProperties {
+	parameters: string[];
+	returnVar: boolean;
+	deprecated: boolean;
+	constructor(parameters: string[], returnVar: boolean, deprecated: boolean){
+		this.parameters=parameters;
+		this.returnVar=returnVar;
+		this.deprecated=deprecated;
+	}
+}
+
+class checkResults {
+	mainComment: boolean;
+	parameters: boolean[][];
+	returnVar: boolean[];
+	deprecated: boolean[];
+	constructor(mainComment: boolean, parameters: boolean[][], returnVar: boolean[], deprecated: boolean[]){
+		this.mainComment=mainComment;
+		this.parameters=parameters;
+		this.returnVar=returnVar;
+		this.deprecated=deprecated;
+	}
+	isCorrect(){
+		// eslint-disable-next-line curly
+		if(!this.mainComment) return false;
+		// eslint-disable-next-line curly
+		this.parameters.forEach((parameter) => parameter.forEach((bool) => {if(!bool) return false;}))
+		// eslint-disable-next-line curly
+		this.returnVar.forEach((bool) => {if(!bool) return false;});
+		// eslint-disable-next-line curly
+		this.deprecated.forEach((bool) => {if(!bool) return false;})
+	}
 }
 
 // export async function getClassVariables(params:type) {
