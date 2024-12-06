@@ -10,12 +10,17 @@ export function activate(context: vscode.ExtensionContext) {
 	// Use the console to output diagnostic information (console.log) and errors (console.error)
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "javadoc-comment-generator" is now active!');
+	let chatGPT:OpenAI;
+	if(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"){
+		chatGPT = new OpenAI({apiKey:vscode.workspace.getConfiguration().get("javadoc-comment-generator.openAIKey")});
+	}
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
 	// The commandId parameter must match the command field in package.json
 	const commands = [
-		vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor)),
+		vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT)),
+		vscode.commands.registerCommand('javadoc-comment-generator.generateBlankCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT, true)),
 		vscode.commands.registerCommand('javadoc-comment-generator.deleteJavaDocComments', () => deleteJavaDocComments(vscode.window.activeTextEditor))
 	];
 
@@ -29,10 +34,10 @@ export function deactivate() {}
  * Generates Javadoc Comments
  * @param activeEditor VSCode editor used (READ: File edited)
  */
-export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, generateBlanks=false){
+export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI, generateBlanks=false){
 	let methods = await getMethods(activeEditor);
 	if(methods){
-		handleMethods(activeEditor, new Set(methods), generateBlanks);
+		handleMethods(activeEditor, new Set(methods), generateBlanks, chatGPT);
 	}
 
 }
@@ -88,7 +93,7 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param activeEditor VSCode editor used (READ: File edited)
  * @param methods List of different method symbols
  */
-export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: boolean){
+export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: boolean, chatGPT:OpenAI){
 	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods"));
 	for(let method of methods){
 		if(!activeEditor?.document?.getText(method.range).includes("/**") && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")==="true" && activeEditor?.document?.getText(method.range).includes("@Override")) && !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod")==="true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))){
@@ -115,7 +120,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				
 			}
 			else{
-				let methodProperties = await promptUser(method.name, params, returnVar, override);
+				let methodProperties = await promptUser(method.name, params, returnVar, override, chatGPT, activeEditor?.document.getText(method.range) as string);
 				methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
 			}
 			activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
@@ -130,12 +135,23 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  * @param override Boolean that if true, indicates that the method returns a value
  * @returns Array of descriptions
  */
-export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined): Promise<({ [id: string]: string; } | string | undefined)[]>{
+export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, override:boolean | undefined, chatGPT:OpenAI, methodText:string): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
 	let methodDesc = await vscode.window.showInputBox({
 		prompt: "Description of the method: " + methodName,
-		title: "Description of the method: " + methodName
+		title: "Description of the method: " + methodName,
+		placeHolder:  (chatGPT)? "":""
 	});
+	console.log((await chatGPT.chat.completions.create({
+		model: "gpt-4o-mini",
+		messages: [
+			{ role: "system", content: "You are a highly skilled developer and documentation expert. I will provide you with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
+			{
+				role: "user",
+				content: `Write a description of the following method:\n${methodText}`,
+			},
+		],
+	})).choices[0].message);
 	if(!methodDesc) {methodDesc="";}
 	o.push(methodDesc);
 	let paramDict:{[id:string]: string}={};

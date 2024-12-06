@@ -22,7 +22,7 @@
         "title": "Generate Comments for File"
       },
       {
-        "command": "javadoc-comment-generator.generateCommentsForFile",
+        "command": "javadoc-comment-generator.generateBlankCommentsForFile",
         "title": "Generate Blank Comments for File"
       },
       {
@@ -48,7 +48,7 @@
         "javadoc-comment-generator.generateAISuggestion": {
           "title": "Generate AI Suggestions",
           "type": "boolean",
-          "default": "false",
+          "default": "true",
           "description": "Determines if AI suggestions for descriptions should be shown."
         },
         "javadoc-comment-generator.openAIKey": {
