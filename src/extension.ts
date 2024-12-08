@@ -107,6 +107,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 		 !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod")==="true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))
 		){
 			console.log(method);
+			activeEditor?.revealRange(method.range);
 			let indent=activeEditor?.document?.getText(new vscode.Range(method.range.start.with({character: 0}), method.range.start)).replace(/[^\s]/g, "");
 			let params: string[] | undefined = [];
 			let returnVar = !(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);
@@ -274,12 +275,12 @@ class MethodProperties {
 		this.deprecated=(activeEditor?.document?.getText(method.range).includes("@Deprecated"));
 	}
 }
-enum Results{
-	Correct,
-	Missing,
-	Blank,
-	Extra,
-	Unchecked
+enum Results{ //TODO: Remove this and bottom class and just replace it with a method
+	Correct, //This property is completely correct
+	Missing, //This property is missing
+	Blank, //This property does not have a description
+	Extra, //This property should be removed
+	Unchecked //Default value
 }
 class CheckResults {
 	mainComment: Results = Results.Unchecked;
@@ -292,6 +293,58 @@ class CheckResults {
 		this.returnVar=returnVar;
 		this.deprecated=deprecated;
 	}
+	static checkJavaDocComment(comment:string, properties:MethodProperties, method:string, chatGPT:OpenAI): CheckResults{
+		let c = new CheckResults();
+		if(/\/\*\*\s+\* *\n/.test(comment)){
+			c.mainComment=Results.Blank;
+		}
+		else if(/\/\*\*\s+\* *@/.test(comment)){
+			c.mainComment=Results.Missing;
+		}
+		else{
+			c.mainComment=Results.Correct;
+		}
+		let params = [...comment.matchAll(new RegExp("@param .*", "g"))];
+		for (let param of params){
+			
+		}
+		//TODO: add param checking logic(need to test so doing it later)
+		if(comment.includes("@return")){
+			if(!properties.returnVar){
+				c.returnVar=Results.Extra;
+			}
+			else if(/@return *\n/.test(comment)){
+				c.returnVar=Results.Blank;
+			}
+			else{
+				c.returnVar=Results.Correct;
+			}
+		}
+		else if(properties.returnVar){
+			c.returnVar=Results.Missing;
+		}
+		else{
+			c.returnVar=Results.Correct;
+		}
+		if(comment.includes("@deprecated")){
+			if(!properties.deprecated){
+				c.deprecated=Results.Extra;
+			}
+			else if(/@deprecated *\n/.test(comment)){
+				c.deprecated=Results.Blank;
+			}
+			else{
+				c.deprecated=Results.Correct;
+			}
+		}
+		else if(properties.deprecated){
+			c.deprecated=Results.Missing;
+		}
+		else{
+			c.deprecated=Results.Correct;
+		}
+		return c;
+	}
 	isCorrect(){
 		// eslint-disable-next-line curly
 		if(this.mainComment!==Results.Correct) return false;
@@ -303,7 +356,3 @@ class CheckResults {
 		if(this.deprecated!==Results.Correct) return false;
 	}
 }
-
-// export async function getClassVariables(params:type) {
-	
-// }
