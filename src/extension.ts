@@ -11,10 +11,12 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "javadoc-comment-generator" is now active!');
 	let chatGPT:OpenAI;
+	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true");
 	if(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"){
 		chatGPT = new OpenAI({apiKey:vscode.workspace.getConfiguration().get("javadoc-comment-generator.openAIKey")});
 		console.log(chatGPT);
 	}
+	console.log("f");
 
 	// The command has been defined in the package.json file
 	// Now provide the implementation of the command with registerCommand
@@ -160,10 +162,10 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		let methodDesc = await vscode.window.showInputBox({
 			prompt: "Description of the method: " + methodName,
 			title: "Description of the method: " + methodName,
-			placeHolder:  (chatGPT)? await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT):""
+			value:  (chatGPT)? await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT):""
 		});
 		if(chatGPT){
-			console.log(promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT));
+			console.log(await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT));
 		}
 		if(!methodDesc) {methodDesc="";}
 		o.push(methodDesc);
@@ -175,7 +177,8 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	if(params){
 		for(let param of params){let desc = await vscode.window.showInputBox({
 					prompt: "Description for the parameter: " + param + " of method: " + methodName,
-					title: "Description for the parameter: " + param + " of method: " + methodName
+					title: "Description for the parameter: " + param + " of method: " + methodName,
+					value:  (chatGPT)? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT):""
 				}); 
 			if(!desc) {desc="";}
 			paramDict[param] = desc;
@@ -185,7 +188,8 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	if(returnVar){
 		let desc = await vscode.window.showInputBox({
 				prompt: "Description for the return of method: " + methodName,
-				title: "Description for the return of method: " + methodName
+				title: "Description for the return of method: " + methodName,
+				value:  (chatGPT)? await promptChatGPT(`Write a description for the return value of the following method:\n${methodText}`, chatGPT):""
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
@@ -208,16 +212,19 @@ export async function promptUser(methodName:string, params: string[] | undefined
 }
 
 export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<string>{
-	return (await chatGPT.chat.completions.create({
-				model: "gpt-4o-mini",
-				messages: [
-					{ role: "system", content: "You are a highly skilled developer and documentation expert. You will be provided with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Here's an example of the expected output format: The name of the method for which the user is providing descriptions. It is used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
-					{
-						role: "user",
-						content: prompt,
-					},
-				],
-			})).choices[0].message.toString();
+	let m = (await chatGPT.chat.completions.create({
+		model: "gpt-4o-mini",
+		messages: [
+			{ role: "system", content: "You are a highly skilled developer and documentation expert. You will be provided with the structure and context of a JavaScript/TypeScript method. Your task is to describe the purpose and usage of specific parameters in a clear and concise manner, suitable for use in Javadoc-style comments. Use 1-2 sentences, ensuring the explanation is context-specific and relevant to its role within the method. Do not include anything other than the description of the method in your response. Do not include 'nameofmethod:' in your response. Start your comment with a verb Do not include new lines, /**, *, or */ in your response. Here's an example of the expected output format: name of the method for which the user is providing descriptions. Used to dynamically prompt the user with context-specific input boxes for method details and serves as the reference identifier for the method throughout the user prompts." },
+			{
+				role: "user",
+				content: prompt,
+			},
+		],
+	})).choices[0].message.content;
+	if(m) {return m;}
+	vscode.window.showInformationMessage("ChatGPT API Key not properly input!");
+	return "";
 }
 
 /**
@@ -287,13 +294,13 @@ class CheckResults {
 	}
 	isCorrect(){
 		// eslint-disable-next-line curly
-		if(!this.mainComment) return false;
+		if(this.mainComment!==Results.Correct) return false;
 		// eslint-disable-next-line curly
-		this.parameters.forEach((parameter) => parameter.forEach((bool) => {if(!bool) return false;}))
+		this.parameters.forEach((parameter) => {if(parameter!==Results.Correct) return false;});
 		// eslint-disable-next-line curly
-		this.returnVar.forEach((bool) => {if(!bool) return false;});
+		if(this.returnVar!==Results.Correct) return false;
 		// eslint-disable-next-line curly
-		this.deprecated.forEach((bool) => {if(!bool) return false;})
+		if(this.deprecated!==Results.Correct) return false;
 	}
 }
 
