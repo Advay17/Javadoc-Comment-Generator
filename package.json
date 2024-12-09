@@ -26,18 +26,8 @@
         "category": "Javadoc Comment Generator"
       },
       {
-        "command": "javadoc-comment-generator.generateBlankCommentsForFile",
-        "title": "Generate Blank Comments for this File",
-        "category": "Javadoc Comment Generator"
-      },
-      {
         "command": "javadoc-comment-generator.deleteJavaDocComments",
         "title": "Delete all Javadoc Comments in this File",
-        "category": "Javadoc Comment Generator"
-      },
-      {
-        "command": "javadoc-comment-generator.generateAIComments",
-        "title": "Generate AI Comments for this File",
         "category": "Javadoc Comment Generator"
       }
     ],
