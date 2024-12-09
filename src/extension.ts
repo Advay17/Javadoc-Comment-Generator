@@ -139,8 +139,8 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  * @returns Array of parameter names 
  */
 export function listParams(identifier:string, methodText:string): string[] {
-	identifier=identifier.substring(0, ((identifier.indexOf(",")!==-1)? identifier.indexOf(",") : identifier.indexOf(")")));
-	let paramString=methodText?.substring(methodText.indexOf(identifier));
+	identifier=identifier.replace("(", "\s*(\s*")
+	let paramString=methodText?.substring(methodText.indexOf(identifier)); 
 	paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
 	return paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
 }
@@ -242,20 +242,25 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	}
 	else{
 		if(description!==undefined){
-			let splitDescription = [];
-			do {
-				splitDescription.push(description.substring(0, Math.min(description.length, 120)));
-				description=description.substring(Math.min(description.length, 120));
-			} while (description.length>0);
-			splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
+			splitLines(description, maxCharacters).forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
 		}
 		else{
 			o+="\n"+indent+" * ";
 		}
 		Object.entries(parameters).forEach(
-			([name, desc]) => o+=`\n${indent} * @param ${name} ${desc}`
+			([name, desc]) => {
+				o+=`\n${indent} * @param ${name} `;
+				let lines = splitLines(desc, maxCharacters ,maxCharacters-`@param ${name} `.length);
+				o+=lines[0];
+				lines.slice(1).forEach((line) => o+=`\n${indent} * ${line}`);
+			}
 		);
-		if(returnVar!==undefined) {o+=`\n${indent} * @return ${returnVar}`;}
+		if(returnVar!==undefined) {
+			o+=`\n${indent} * @return `;
+			let lines = splitLines(returnVar, maxCharacters, maxCharacters-8);
+			o+=lines[0];
+			lines.slice(1).forEach((line) => o+=`\n${indent} * ${line}`);
+		}
 		if(deprecated!==undefined) {o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;}
 
 		o+="\n"+indent+" */\n"+indent;
@@ -263,8 +268,32 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	return o;
 }
 
-export function splitLines(str:string, maxCharacters: number): string[] {
-	return [];
+export function splitLines(str:string, maxCharacters: number, firstLineMaxCharacters = maxCharacters): string[] {
+	let lines:string[] = [];
+	if(str.length>firstLineMaxCharacters){
+		let m = str.match(`(^.{0,${firstLineMaxCharacters}}(?= ))|(^.{0,${firstLineMaxCharacters-1}}\.)`);
+		if(m){
+			lines.push(m[0]);
+			str=str.substring(firstLineMaxCharacters).trimStart();
+		}
+		else{
+			lines.push(str.substring(0, firstLineMaxCharacters));
+			str="-" + str.substring(firstLineMaxCharacters);
+		}
+	}
+	while(str.length>maxCharacters){
+		let m = str.match(`(^.{0,${maxCharacters}}(?= ))|(^.{0,${maxCharacters-1}}\.)`);
+		if(m){
+			lines.push(m[0]);
+			str=str.substring(maxCharacters).trimStart();
+		}
+		else{
+			lines.push(str.substring(0, maxCharacters));
+			str="-" + str.substring(maxCharacters);
+		}
+	}
+	lines.push(str);
+	return lines;
 }
 
 export function checkJavaDocComment(comment:string, properties:MethodProperties): CheckResults{
