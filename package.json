@@ -1,14 +1,17 @@
 {
   "name": "javadoc-comment-generator",
   "displayName": "Javadoc Comment Generator",
-  "description": "",
+  "description": "An extension to generate Javadoc Comments, both manually and using ChatGPT",
+  "author": "Kavin Muralikrishnan",
+  "publisher": "Advay17",
+  "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "github.com/Advay17/javadoc-comment-generator"
   },
   "version": "0.0.1",
   "engines": {
-    "vscode": "^1.95.0"
+    "vscode": "^1.85.1"
   },
   "categories": [
     "Other"
@@ -19,15 +22,18 @@
     "commands": [
       {
         "command": "javadoc-comment-generator.generateCommentsForFile",
-        "title": "Generate Comments for File"
+        "title": "Generate Comments for File",
+        "category": "Javadoc Comment Generator"
       },
       {
         "command": "javadoc-comment-generator.generateBlankCommentsForFile",
-        "title": "Generate Blank Comments for File"
+        "title": "Generate Blank Comments for File",
+        "category": "Javadoc Comment Generator"
       },
       {
         "command": "javadoc-comment-generator.deleteJavaDocComments",
-        "title": "Delete all Javadoc Comments in File"
+        "title": "Delete all Javadoc Comments in File",
+        "category": "Javadoc Comment Generator"
       }
     ],
     "configuration": {
@@ -76,7 +82,7 @@
   "devDependencies": {
     "@types/mocha": "^10.0.9",
     "@types/node": "20.x",
-    "@types/vscode": "^1.95.0",
+    "@types/vscode": "^1.85.1",
     "@typescript-eslint/eslint-plugin": "^8.10.0",
     "@typescript-eslint/parser": "^8.7.0",
     "@vscode/test-cli": "^0.0.10",
