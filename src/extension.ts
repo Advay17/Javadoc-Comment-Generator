@@ -11,7 +11,6 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "javadoc-comment-generator" is now active!');
 	let chatGPT:OpenAI;
-	console.log(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true");
 	if(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"){
 		chatGPT = new OpenAI({apiKey:vscode.workspace.getConfiguration().get("javadoc-comment-generator.openAIKey")});
 		console.log(chatGPT);
@@ -159,15 +158,13 @@ export function listParams(identifier:string, methodText:string): string[] {
 export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, deprecated:boolean | undefined, 
 								chatGPT:OpenAI, methodText:string, promptMainDesc = true): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
+	let usingGPT=vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"
 	if(promptMainDesc){
 		let methodDesc = await vscode.window.showInputBox({
 			prompt: "Description of the method: " + methodName,
 			title: "Description of the method: " + methodName,
-			value:  (chatGPT)? await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT):""
+			value:  (usingGPT)? await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT):""
 		});
-		if(chatGPT){
-			console.log(await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT));
-		}
 		if(!methodDesc) {methodDesc="";}
 		o.push(methodDesc);
 	}
@@ -179,7 +176,7 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		for(let param of params){let desc = await vscode.window.showInputBox({
 					prompt: "Description for the parameter: " + param + " of method: " + methodName,
 					title: "Description for the parameter: " + param + " of method: " + methodName,
-					value:  (chatGPT)? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT):""
+					value:  (usingGPT)? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT):""
 				}); 
 			if(!desc) {desc="";}
 			paramDict[param] = desc;
@@ -190,7 +187,7 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		let desc = await vscode.window.showInputBox({
 				prompt: "Description for the return of method: " + methodName,
 				title: "Description for the return of method: " + methodName,
-				value:  (chatGPT)? await promptChatGPT(`Write a description for the return value of the following method:\n${methodText}`, chatGPT):""
+				value:  (usingGPT)? await promptChatGPT(`Write a description for the return value of the following method:\n${methodText}`, chatGPT):""
 		}); 
 		if(!desc) {desc="";}
 		o.push(desc);
@@ -239,25 +236,35 @@ export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<stri
 export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string): string{
 	console.log("Generating Javadoc String");
 	let o="/**";
-	if(description!==undefined){
-		let splitDescription = [];
-		do {
-			splitDescription.push(description.substring(0, Math.min(description.length, 120)));
-			description=description.substring(Math.min(description.length, 120));
-		} while (description.length>0);
-		splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
+	let maxCharacters = parseInt(vscode.workspace.getConfiguration().get("javadoc-comment-generator.maxCharactersPerLine") as string) - indent.length - 3; /* 3 is ' * '  or '/**' */
+	if(description.length<=maxCharacters-4 /* 4 is space after '/**' and string end*/ && Object.keys(parameters).length===0 && returnVar===undefined && deprecated===undefined){
+		o+=" " + description + " */\n"+indent;
 	}
 	else{
-		o+="\n"+indent+" * ";
-	}
-	Object.entries(parameters).forEach(
-		([name, desc]) => o+=`\n${indent} * @param ${name} ${desc}`
-	);
-	if(returnVar!==undefined) {o+=`\n${indent} * @return ${returnVar}`;}
-	if(deprecated!==undefined) {o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;}
+		if(description!==undefined){
+			let splitDescription = [];
+			do {
+				splitDescription.push(description.substring(0, Math.min(description.length, 120)));
+				description=description.substring(Math.min(description.length, 120));
+			} while (description.length>0);
+			splitDescription.forEach((descriptionSection) => o+="\n"+indent+" * "+descriptionSection);
+		}
+		else{
+			o+="\n"+indent+" * ";
+		}
+		Object.entries(parameters).forEach(
+			([name, desc]) => o+=`\n${indent} * @param ${name} ${desc}`
+		);
+		if(returnVar!==undefined) {o+=`\n${indent} * @return ${returnVar}`;}
+		if(deprecated!==undefined) {o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;}
 
-	o+="\n"+indent+" */\n"+indent;
+		o+="\n"+indent+" */\n"+indent;
+	}
 	return o;
+}
+
+export function splitLines(str:string, maxCharacters: number): string[] {
+	return [];
 }
 
 export function checkJavaDocComment(comment:string, properties:MethodProperties): CheckResults{

@@ -55,6 +55,11 @@
           "title": "OpenAI Key",
           "type": "string",
           "description": "OpenAI key to generate ChatGPT suggestions."
+        },
+        "javadoc-comment-generator.maxCharactersPerLine": {
+          "title": "Maximum Characters Per Line",
+          "type": "integer",
+          "description": "The maximum characters per comment line, including indents."
         }
       }
     }
