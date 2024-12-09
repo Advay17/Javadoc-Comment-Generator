@@ -22,8 +22,9 @@ export function activate(context: vscode.ExtensionContext) {
 	// The commandId parameter must match the command field in package.json
 	const commands = [
 		vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT)),
-		vscode.commands.registerCommand('javadoc-comment-generator.generateBlankCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT, true)),
-		vscode.commands.registerCommand('javadoc-comment-generator.deleteJavaDocComments', () => deleteJavaDocComments(vscode.window.activeTextEditor))
+		vscode.commands.registerCommand('javadoc-comment-generator.generateBlankCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT, GenerationMode.Blanks)),
+		vscode.commands.registerCommand('javadoc-comment-generator.deleteJavaDocComments', () => deleteJavaDocComments(vscode.window.activeTextEditor)),
+		vscode.commands.registerCommand('javadoc-comment-generator.generateAIComments', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT, GenerationMode.ChatGPT))
 	];
 
 	commands.forEach((command) => context.subscriptions.push(command));
@@ -38,12 +39,20 @@ export function deactivate() {}
  * @param chatGPT OpenAI client for generating comment suggestions
  * @param generateBlanks Boolean that if true, dictates that blank comments must be made
  */
-export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI, generateBlanks=false){
+export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI, generationMode=GenerationMode.Normal){
 	let methods = await getMethods(activeEditor);
-	if(methods){
-		handleMethods(activeEditor, new Set(methods), generateBlanks, chatGPT);
+	if(generationMode==GenerationMode.ChatGPT && vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="false"){
+		vscode.window.showInformationMessage("Enable AI suggestions and enter your API key!");
+	}
+	else if(methods){
+		handleMethods(activeEditor, new Set(methods), generationMode, chatGPT);
 	}
 
+}
+enum GenerationMode{
+	Normal,
+	Blanks,
+	ChatGPT
 }
 /**
  * Deletes all javadoc comments in a file
@@ -99,7 +108,7 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param generateBlanks Determines if the comments should all be blanks
  * @param chatGPT OpenAI object to generate comments
  */
-export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: boolean, chatGPT:OpenAI){
+export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generateBlanks: GenerationMode, chatGPT:OpenAI){
 	for(let method of methods){
 		if(!activeEditor?.document?.getText(method.range).includes("/**") &&
 		 !(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods")==="true" && activeEditor?.document?.getText(method.range).includes("@Override")) && 
@@ -115,18 +124,28 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 				params=listParams(method.name, activeEditor?.document?.getText(method.range) as string);
 			}
 			let methodDoc;
-			if(generateBlanks){
-				let blankParamDict: {[id:string]: string} = {};
-				for(let param of params as string[]){
-					blankParamDict[param] = "";
-				}
-				methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (deprecated)? "": undefined, indent as string);
-				console.log(methodDoc);
+			switch(generateBlanks){
+				case GenerationMode.Blanks:
+					let blankParamDict: {[id:string]: string} = {};
+					for(let param of params as string[]){
+						blankParamDict[param] = "";
+					}
+					methodDoc = createJavaDocString("", blankParamDict, (returnVar)? "": undefined, (deprecated)? "": undefined, indent as string);
+					break;
+				case GenerationMode.ChatGPT:
+					let gptParamDict: {[id:string]: string} = {};
+					let methodText = activeEditor?.document.getText(method.range) as string;
+					for(let param of params as string[]){
+						gptParamDict[param] = await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT);
+					}
+					methodDoc = createJavaDocString(await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT), gptParamDict, (returnVar)?await promptChatGPT(`Write a description for the return value of the following method:\n${methodText}`, chatGPT): undefined, (deprecated)? "": undefined, indent as string);
+					break;
+				default:
+					let methodProperties = await promptUser(method.name, params, returnVar, deprecated, chatGPT, activeEditor?.document.getText(method.range) as string);
+					methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
+					break;
 			}
-			else{
-				let methodProperties = await promptUser(method.name, params, returnVar, deprecated, chatGPT, activeEditor?.document.getText(method.range) as string);
-				methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
-			}
+			console.log(methodDoc);
 			await activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
 		};
 	}
@@ -139,7 +158,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  * @returns Array of parameter names 
  */
 export function listParams(identifier:string, methodText:string): string[] {
-	identifier=identifier.replace("(", "\s*(\s*")
+	identifier=identifier.replace("(", "\s*(\s*");
 	let paramString=methodText?.substring(methodText.indexOf(identifier)); 
 	paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
 	return paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
@@ -158,7 +177,7 @@ export function listParams(identifier:string, methodText:string): string[] {
 export async function promptUser(methodName:string, params: string[] | undefined, returnVar:boolean, deprecated:boolean | undefined, 
 								chatGPT:OpenAI, methodText:string, promptMainDesc = true): Promise<({ [id: string]: string; } | string | undefined)[]>{
 	let o=[];
-	let usingGPT=vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true"
+	let usingGPT=vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")==="true";
 	if(promptMainDesc){
 		let methodDesc = await vscode.window.showInputBox({
 			prompt: "Description of the method: " + methodName,
@@ -209,6 +228,12 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	return o;
 }
 
+/**
+ * Prompts ChatGPT for a portion of a javadoc comment
+ * @param prompt Prompt used on ChatGPT
+ * @param chatGPT Instance of an OpenAI client used for text generation
+ * @returns Promise for a string output
+ */
 export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<string>{
 	let m = (await chatGPT.chat.completions.create({
 		model: "gpt-4o-mini",
@@ -267,11 +292,17 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 	}
 	return o;
 }
-
+/**
+ * Splits lines based on maximum number of characters by word
+ * @param str String to split
+ * @param maxCharacters Maximum number of characters per line
+ * @param firstLineMaxCharacters Maximum number of characters in the first line(useful for tags);
+ * @returns 
+ */
 export function splitLines(str:string, maxCharacters: number, firstLineMaxCharacters = maxCharacters): string[] {
 	let lines:string[] = [];
 	if(str.length>firstLineMaxCharacters){
-		let m = str.match(`(^.{0,${firstLineMaxCharacters}}(?= ))|(^.{0,${firstLineMaxCharacters-1}}\.)`);
+		let m = str.match(`(^.{0,${firstLineMaxCharacters}}(?= ))|(^.{0,${firstLineMaxCharacters-1}}\.)`); //This is one of the greatest regex of all time
 		if(m){
 			lines.push(m[0]);
 			str=str.substring(firstLineMaxCharacters).trimStart();
@@ -282,7 +313,7 @@ export function splitLines(str:string, maxCharacters: number, firstLineMaxCharac
 		}
 	}
 	while(str.length>maxCharacters){
-		let m = str.match(`(^.{0,${maxCharacters}}(?= ))|(^.{0,${maxCharacters-1}}\.)`);
+		let m = str.match(`(^.{0,${maxCharacters}}(?= ))|(^.{0,${maxCharacters-1}}\.)`); //This is one of the greatest regex of all time
 		if(m){
 			lines.push(m[0]);
 			str=str.substring(maxCharacters).trimStart();
