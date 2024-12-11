@@ -40,11 +40,23 @@
           "default": "true",
           "description": "Determines if overriding methods should still have comments generated."
         },
+        "javadoc-comment-generator.useDeprecationTemplate": {
+          "title": "Use the Recommended Template for Generating Deprecated Methods",
+          "type": "boolean",
+          "default": "true",
+          "description": "Use the template '@deprecated Use {@link (METHODPATH)} instead' when generating deprecation comments"
+        },
         "javadoc-comment-generator.generateCommentsForMainMethod": {
           "title": "Generate Comments for Main Method",
           "type": "boolean",
           "default": "true",
           "description": "Determines if comments should be generated for the main method."
+        },
+        "javadoc-comment-generator.maxCharactersPerLine": {
+          "title": "Maximum Characters Per Line",
+          "type": "integer",
+          "description": "The maximum characters per comment line, including indents.",
+          "default": "120"
         },
         "javadoc-comment-generator.generateAISuggestion": {
           "title": "Generate AI Suggestions",
@@ -56,12 +68,6 @@
           "title": "OpenAI Key",
           "type": "string",
           "description": "OpenAI key to generate ChatGPT suggestions."
-        },
-        "javadoc-comment-generator.maxCharactersPerLine": {
-          "title": "Maximum Characters Per Line",
-          "type": "integer",
-          "description": "The maximum characters per comment line, including indents.",
-          "default": "120"
         }
       }
     }

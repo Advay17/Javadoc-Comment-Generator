@@ -150,7 +150,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 					break;
 				default:
 					let methodProperties = await promptUser(method.name, params, returnVar, deprecated, chatGPT, activeEditor?.document.getText(method.range) as string);
-					methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string);
+					methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as {[id:string]: string}, methodProperties[2] as string, methodProperties[3] as string, indent as string, vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate")===true);
 					break;
 			}
 			console.log(methodDoc);
@@ -167,7 +167,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
  */
 export function listParams(identifier:string, methodText:string): string[] {
 	identifier=identifier.replace("(", "\s*(\s*").replace(" ", ".*")+"?";
-	let paramString=methodText?.substring((methodText.match(new RegExp(identifier)) as RegExpMatchArray).index as number); 
+	let paramString=methodText?.substring(methodText.search(new RegExp(identifier)) as number); 
 	paramString=paramString?.substring(paramString.indexOf("(")+1, paramString.indexOf(")")); 
 	return paramString?.replace(/[^(,]*<+(.*?)>+ | *[A-z0-9.]+ +/g, "").split(","); //I made that beautiful regex
 }
@@ -200,7 +200,8 @@ export async function promptUser(methodName:string, params: string[] | undefined
 	}
 	let paramDict:{[id:string]: string}={};
 	if(params){
-		for(let param of params){let desc = await vscode.window.showInputBox({
+		for(let param of params){
+			let desc = await vscode.window.showInputBox({
 					prompt: "Description for the parameter: " + param + " of method: " + methodName,
 					title: "Description for the parameter: " + param + " of method: " + methodName,
 					value:  (usingGPT)? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT):""
@@ -223,12 +224,22 @@ export async function promptUser(methodName:string, params: string[] | undefined
 		o.push(undefined);
 	}
 	if(deprecated){
-		let desc = await vscode.window.showInputBox({
-				prompt: "What is the path of the alternative method of method: " + methodName,
-				title: "What is the path of the alternative method of method: " + methodName
-		}); 
-		if(!desc) {desc="";}
-		o.push(desc);
+		if(vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate")===true){ //TODO: Reconfigure this to instead allow for custom deprecation comment templates
+			let desc = await vscode.window.showInputBox({
+					prompt: "What is the path of the alternative method of method: " + methodName,
+					title: "What is the path of the alternative method of method: " + methodName
+			}); 
+			if(!desc) {desc="";}
+			o.push(desc);
+		}
+		else{
+			let desc = await vscode.window.showInputBox({
+				prompt: "Description of the deprecation of method: " + methodName,
+				title: "Description of the deprecation of method: " + methodName,
+			}); 
+			if(!desc) {desc="";}
+			o.push(desc);
+		}
 	}
 	else{
 		o.push(undefined);
@@ -266,7 +277,7 @@ export async function promptChatGPT(prompt:string, chatGPT:OpenAI): Promise<stri
  * @param deprecated If undefined not deprecated, else it links to the alternate method to use.
  * @returns Formatted Javadoc String
  */
-export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string): string{
+export function createJavaDocString(description:string, parameters:{[id:string]: string}, returnVar: string | undefined, deprecated: string | undefined, indent: string, templateDeprecated:boolean=true): string{
 	console.log("Generating Javadoc String");
 	let o="/**";
 	let maxCharacters = parseInt(vscode.workspace.getConfiguration().get("javadoc-comment-generator.maxCharactersPerLine") as string) - indent.length - 3; /* 3 is ' * '  or '/**' */
@@ -294,7 +305,18 @@ export function createJavaDocString(description:string, parameters:{[id:string]:
 			o+=lines[0];
 			lines.slice(1).forEach((line) => o+=`\n${indent} * ${line}`);
 		}
-		if(deprecated!==undefined) {o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;}
+		if(deprecated!==undefined) {
+			if(!templateDeprecated){
+				o+=`\n${indent} * @deprecated `;
+				let lines = splitLines(deprecated, maxCharacters, maxCharacters-12);
+				o+=lines[0];
+				lines.slice(1).forEach((line) => o+=`\n${indent} * ${line}`);
+			}
+			else
+			{
+				o+=`\n${indent} * @deprecated Use {@link ${deprecated}} instead`;
+			}
+		}
 
 		o+="\n"+indent+" */\n"+indent;
 	}
@@ -335,65 +357,77 @@ export function splitLines(str:string, maxCharacters: number, firstLineMaxCharac
 	return lines;
 }
 
-export async function checkJavaDocComment(comment:string, properties:MethodProperties, method:string, chatGPT:OpenAI, usingGPT:boolean): Promise<CheckResults>{
-	let c = new CheckResults();
+export async function regenerateJavadocComment(comment:string, properties:MethodProperties, method:string, chatGPT:OpenAI, usingGPT:boolean): Promise<({ [id: string]: string; } | string | undefined | boolean)[]>{
 	let o = [];
-	let methodDesc:string;
-	if(/\/\*\*\s+\* *\n|\/\*\* *\*\//.test(comment)||/\/\*\*\s+\* *@/.test(comment)){
+	let methodDesc="";
+	if(/\/\*\*.*\*\//.test(comment)){
+		methodDesc=(comment.match(/(?<=\/\*\*).*(?=\*\/)/) as RegExpMatchArray)[0];
+	}
+	else{
+		comment.match(/(?<=(\n\s*\*[ 	]*)+)(?<!@(\s|.)*)[^\s@\/].*/g)?.forEach((match) => methodDesc+=match);
+	}
+	if(/\s*/.test(methodDesc)){
 		let methodDesc = await vscode.window.showInputBox({
 			prompt: "Description of the method: " + properties.name,
 			title: "Description of the method: " + properties.name,
 			value:  (usingGPT)? await promptChatGPT(`Write a description of the following method:\n${properties.text}`, chatGPT):""
 		});
 		if(!methodDesc) {methodDesc="";}
-		o.push(methodDesc);
 	}
-	else{
-		c.mainComment=Results.Correct;
-	}
-	let params = [...comment.matchAll(new RegExp("@param .*", "g"))];
-	for (let param of params){
-		
-	}
-	//TODO: add param checking logic(need to test so doing it later)
-	if(comment.includes("@return")){
-		if(!properties.returnVar){
-			c.returnVar=Results.Extra;
-		}
-		else if(/@return *\n/.test(comment)){
-			c.returnVar=Results.Blank;
+	o.push(methodDesc);
+	let paramDict:{[id:string]: string} ={};
+	for(let param of properties.parameters){
+		let matches = comment.match(new RegExp(`(?<=@param[ 	]+${param}\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*`, "g"));
+		if(matches!==null){
+			matches.forEach((match) => paramDict[param]+=match);
 		}
 		else{
-			c.returnVar=Results.Correct;
+			let desc = await vscode.window.showInputBox({
+				prompt: "Description for the parameter: " + param + " of method: " + properties.name,
+				title: "Description for the parameter: " + param + " of method: " + properties.name,
+				value:  (usingGPT)? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${properties.text}`, chatGPT):""
+			}); 
+			if(!desc) {desc="";}
+			paramDict[param] = desc;
 		}
 	}
-	else if(properties.returnVar){
-		c.returnVar=Results.Missing;
-	}
-	else{
-		c.returnVar=Results.Correct;
-	}
-	if(comment.includes("@deprecated")){
-		if(!properties.deprecated){
-			c.deprecated=Results.Extra;
-		}
-		else if(/@deprecated *\n/.test(comment)){
-			c.deprecated=Results.Blank;
+	o.push(paramDict);
+	let returnVar:string | undefined = undefined;
+	if(properties.returnVar){
+		let matches=comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*/g);
+		returnVar="";
+		if(matches){
+			matches.forEach(match => returnVar+=match);
 		}
 		else{
-			c.deprecated=Results.Correct;
+			returnVar = await vscode.window.showInputBox({
+				prompt: "Description for the return of method: " + properties.name,
+				title: "Description for the return of method: " + properties.name,
+				value:  (usingGPT)? await promptChatGPT(`Write a description for the return value of the following method:\n${properties.text}`, chatGPT):""
+			}); 
+			if(!returnVar) {returnVar="";}
 		}
 	}
-	else if(properties.deprecated){
-		c.deprecated=Results.Missing;
+	o.push(returnVar);
+	let deprecated:string | undefined = undefined;
+	if(properties.deprecated){
+		let matches=comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*/g);
+		deprecated="";
+		if(matches){
+			matches.forEach(match => deprecated+=match);
+		}
+		else{
+			deprecated = await vscode.window.showInputBox({
+				prompt: "Description for the return of method: " + properties.name,
+				title: "Description for the return of method: " + properties.name
+			}); 
+			if(!deprecated) {deprecated="";} //TODO: Finish this
+		}
 	}
-	else{
-		c.deprecated=Results.Correct;
-	}
-	return c;
+	return o;
 }
 
-class MethodProperties {
+class MethodProperties { //TODO: Refactor methods to use MethodProperties(it's just 1 I think)
 	name: string = "";
 	text: string = "";
 	parameters: string[] = [];
@@ -405,34 +439,5 @@ class MethodProperties {
 		this.parameters=listParams(method.name, activeEditor.document.getText(method.range));
 		this.returnVar=!(method.detail.includes("void") || method.kind===vscode.SymbolKind.Constructor);;
 		this.deprecated=(activeEditor?.document?.getText(method.range).includes("@Deprecated"));
-	}
-}
-enum Results{ //TODO: Remove this and bottom class and just replace it with a method
-	Correct, //This property is completely correct
-	Missing, //This property is missing
-	Blank, //This property does not have a description
-	Extra, //This property should be removed
-	Unchecked //Default value
-}
-class CheckResults {
-	mainComment: Results = Results.Unchecked;
-	parameters: Results[] = [];
-	returnVar: Results = Results.Unchecked;
-	deprecated: Results = Results.Unchecked;
-	constructor(mainComment = Results.Unchecked, parameters = [], returnVar = Results.Unchecked, deprecated = Results.Unchecked){
-		this.mainComment=mainComment;
-		this.parameters=parameters;
-		this.returnVar=returnVar;
-		this.deprecated=deprecated;
-	}
-	isCorrect(){
-		// eslint-disable-next-line curly
-		if(this.mainComment!==Results.Correct) return false;
-		// eslint-disable-next-line curly
-		this.parameters.forEach((parameter) => {if(parameter!==Results.Correct) return false;});
-		// eslint-disable-next-line curly
-		if(this.returnVar!==Results.Correct) return false;
-		// eslint-disable-next-line curly
-		if(this.deprecated!==Results.Correct) return false;
 	}
 }
