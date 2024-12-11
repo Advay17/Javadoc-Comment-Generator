@@ -13,7 +13,6 @@ export function activate(context: vscode.ExtensionContext) {
 	let chatGPT: OpenAI;//TODO: update to use vscode's llm system maybe
 	if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion") === "true") {
 		chatGPT = new OpenAI({ apiKey: vscode.workspace.getConfiguration().get("javadoc-comment-generator.openAIKey") });
-		console.log(chatGPT);
 	}
 
 	// The command has been defined in the package.json file
@@ -35,15 +34,16 @@ export function deactivate() { }
  * @param activeEditor VSCode editor used (READ: File edited)
  * @param chatGPT OpenAI client for generating comment suggestions
  */
-export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI) {
+export async function generateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI) { //TODO: Remove unnecessary exports
 	let methods = await getMethods(activeEditor);
-	let mode = (await vscode.window.showQuickPick(["Manually Write Comments with AI Suggestions", "Automatically Create AI Generate Comments", "Generate Blank Comments"]));
+	let quickPickItems = ["Manually Write Comments with AI Suggestions", "Generate Blank Comments"];
+	if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")) {
+		quickPickItems.push("Automatically Create AI Generate Comments");
+	}
+	let mode = (await vscode.window.showQuickPick(quickPickItems));
 	if (methods && mode) {
 		let genMode;
 		switch (mode) {
-			case "Manually Write Comments with AI Suggestions":
-				genMode = GenerationMode.Normal;
-				break;
 			case "Automatically Create AI Generate Comments":
 				genMode = GenerationMode.ChatGPT;
 				break;
@@ -52,11 +52,36 @@ export async function generateJavadocComments(activeEditor: vscode.TextEditor | 
 				break;
 			default:
 				genMode = GenerationMode.Normal;
+				break;
 		}
-		handleMethods(activeEditor, new Set(methods), genMode, chatGPT);
+		handleMethods(activeEditor, methods, genMode, chatGPT);
 	}
-
 }
+
+export async function regenerateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI) {
+	let methods=await getMethods(activeEditor);
+	let quickPickItems = ["Manually Write Comments with AI Suggestions", "Generate Blank Comments"];
+	if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")) {
+		quickPickItems.push("Automatically Create AI Generate Comments");
+	}
+	let mode = (await vscode.window.showQuickPick(quickPickItems));
+	if(methods && mode){
+		let genMode;
+		switch (mode) {
+			case "Automatically Create AI Generate Comments":
+				genMode = GenerationMode.ChatGPT;
+				break;
+			case "Generate Blank Comments":
+				genMode = GenerationMode.Blanks;
+				break;
+			default:
+				genMode = GenerationMode.Normal;
+				break;
+		}
+		handleMethods(activeEditor, methods, genMode, chatGPT);
+	}
+}
+
 enum GenerationMode {
 	Normal,
 	Blanks,
@@ -116,7 +141,7 @@ export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol
  * @param generationMode Determines the mode of text generation
  * @param chatGPT OpenAI object to generate comments
  */
-export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: Set<vscode.DocumentSymbol>, generationMode: GenerationMode, chatGPT: OpenAI) {
+export async function handleMethods(activeEditor: vscode.TextEditor | undefined, methods: vscode.DocumentSymbol[], generationMode: GenerationMode, chatGPT: OpenAI) {
 	for (let method of methods) {
 		if (!activeEditor?.document?.getText(method.range).includes("/**") &&
 			!(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods") === "true" && activeEditor?.document?.getText(method.range).includes("@Override")) &&
@@ -138,7 +163,7 @@ export async function handleMethods(activeEditor: vscode.TextEditor | undefined,
 					for (let param of params as string[]) {
 						blankParamDict[param] = "";
 					}
-					methodDoc = createJavaDocString("", blankParamDict, (returnVar) ? "" : undefined, (deprecated) ? "" : undefined, indent as string);
+					methodDoc = createJavaDocString("", blankParamDict, (returnVar) ? "" : undefined, (deprecated) ? "" : undefined, indent as string, false);
 					break;
 				case GenerationMode.ChatGPT:
 					let gptParamDict: { [id: string]: string } = {};
@@ -224,22 +249,21 @@ export async function promptUser(methodName: string, params: string[] | undefine
 		o.push(undefined);
 	}
 	if (deprecated) {
+		let desc;
 		if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate") === true) { //TODO: Reconfigure this to instead allow for custom deprecation comment templates
-			let desc = await vscode.window.showInputBox({
+			desc = await vscode.window.showInputBox({
 				prompt: "What is the path of the alternative method of method: " + methodName,
 				title: "What is the path of the alternative method of method: " + methodName
 			});
-			if (!desc) { desc = ""; }
-			o.push(desc);
 		}
 		else {
-			let desc = await vscode.window.showInputBox({
+			desc = await vscode.window.showInputBox({
 				prompt: "Description of the deprecation of method: " + methodName,
 				title: "Description of the deprecation of method: " + methodName,
 			});
-			if (!desc) { desc = ""; }
-			o.push(desc);
 		}
+		if (!desc) { desc = ""; }
+		o.push(desc);
 	}
 	else {
 		o.push(undefined);
@@ -277,7 +301,7 @@ export async function promptChatGPT(prompt: string, chatGPT: OpenAI): Promise<st
  * @param deprecated If undefined not deprecated, else it links to the alternate method to use.
  * @returns Formatted Javadoc String
  */
-export function createJavaDocString(description: string, parameters: { [id: string]: string }, returnVar: string | undefined, deprecated: string | undefined, indent: string, templateDeprecated: boolean = true): string {
+export function createJavaDocString(description: string, parameters: { [id: string]: string }, returnVar: string | undefined, deprecated: string | undefined, indent: string, templateDeprecated: boolean = vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate") === true): string {
 	console.log("Generating Javadoc String");
 	let o = "/**";
 	let maxCharacters = parseInt(vscode.workspace.getConfiguration().get("javadoc-comment-generator.maxCharactersPerLine") as string) - indent.length - 3; /* 3 is ' * '  or '/**' */
@@ -355,10 +379,17 @@ export function splitLines(str: string, maxCharacters: number, firstLineMaxChara
 	lines.push(str);
 	return lines;
 }
-
-export async function regenerateJavadocComment(comment: string, properties: MethodProperties, method: string, chatGPT: OpenAI, usingGPT: boolean): Promise<({ [id: string]: string; } | string | undefined | boolean)[]> {
+/**
+ * Generates an updated javadoc comment
+ * @param comment The string of the comment
+ * @param properties The properties of the method
+ * @param chatGPT OpenAI client
+ * @returns A promise for an array of text for a javadoc comment, to be used with 
+ */
+export async function getJavadocCommentFromComment(comment: string, properties: MethodProperties, chatGPT: OpenAI, genMode: GenerationMode): Promise<({ [id: string]: string; } | string | undefined | boolean)[]> {
 	let o = [];
-	let methodDesc = "";
+	let usingGPT = vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion") === "true";
+	let methodDesc: undefined | string = "";
 	if (/\/\*\*.*\*\//.test(comment)) {
 		methodDesc = (comment.match(/(?<=\/\*\*).*(?=\*\/)/) as RegExpMatchArray)[0];
 	}
@@ -366,12 +397,19 @@ export async function regenerateJavadocComment(comment: string, properties: Meth
 		comment.match(/(?<=(\n\s*\*[ 	]*)+)(?<!@(\s|.)*)[^\s@\/].*/g)?.forEach((match) => methodDesc += match);
 	}
 	if (/\s*/.test(methodDesc)) {
-		let methodDesc = await vscode.window.showInputBox({
-			prompt: "Description of the method: " + properties.name,
-			title: "Description of the method: " + properties.name,
-			value: (usingGPT) ? await promptChatGPT(`Write a description of the following method:\n${properties.text}`, chatGPT) : ""
-		});
-		if (!methodDesc) { methodDesc = ""; }
+		switch (genMode) {
+			case GenerationMode.Blanks:
+				methodDesc = "";
+			case GenerationMode.ChatGPT:
+				methodDesc = await promptChatGPT(`Write a description of the following method:\n${properties.text}`, chatGPT);
+			default:
+				methodDesc = await vscode.window.showInputBox({
+					prompt: "Description of the method: " + properties.name,
+					title: "Description of the method: " + properties.name,
+					value: (usingGPT) ? await promptChatGPT(`Write a description of the following method:\n${properties.text}`, chatGPT) : ""
+				});
+				if (!methodDesc) { methodDesc = ""; }
+		}
 	}
 	o.push(methodDesc);
 	let paramDict: { [id: string]: string } = {};
@@ -381,13 +419,20 @@ export async function regenerateJavadocComment(comment: string, properties: Meth
 			matches.forEach((match) => paramDict[param] += match);
 		}
 		else {
-			let desc = await vscode.window.showInputBox({
-				prompt: "Description for the parameter: " + param + " of method: " + properties.name,
-				title: "Description for the parameter: " + param + " of method: " + properties.name,
-				value: (usingGPT) ? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${properties.text}`, chatGPT) : ""
-			});
-			if (!desc) { desc = ""; }
-			paramDict[param] = desc;
+			switch (genMode) {
+				case GenerationMode.Blanks:
+					paramDict[param] = "";
+				case GenerationMode.ChatGPT:
+					paramDict[param] = await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${properties.text}`, chatGPT);
+				default:
+					let desc = await vscode.window.showInputBox({
+						prompt: "Description for the parameter: " + param + " of method: " + properties.name,
+						title: "Description for the parameter: " + param + " of method: " + properties.name,
+						value: (usingGPT) ? await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${properties.text}`, chatGPT) : ""
+					});
+					if (!desc) { desc = ""; }
+					paramDict[param] = desc;
+			}
 		}
 	}
 	o.push(paramDict);
@@ -399,30 +444,55 @@ export async function regenerateJavadocComment(comment: string, properties: Meth
 			matches.forEach(match => returnVar += match);
 		}
 		else {
-			returnVar = await vscode.window.showInputBox({
-				prompt: "Description for the return of method: " + properties.name,
-				title: "Description for the return of method: " + properties.name,
-				value: (usingGPT) ? await promptChatGPT(`Write a description for the return value of the following method:\n${properties.text}`, chatGPT) : ""
-			});
-			if (!returnVar) { returnVar = ""; }
+			switch (genMode) {
+				case GenerationMode.Blanks:
+					returnVar = "";
+				case GenerationMode.ChatGPT:
+					returnVar = await promptChatGPT(`Write a description for the return value of the following method:\n${properties.text}`, chatGPT);
+				default:
+					returnVar = await vscode.window.showInputBox({
+						prompt: "Description for the return of method: " + properties.name,
+						title: "Description for the return of method: " + properties.name,
+						value: (usingGPT) ? await promptChatGPT(`Write a description for the return value of the following method:\n${properties.text}`, chatGPT) : ""
+					});
+					if (!returnVar) { returnVar = ""; }
+			}
 		}
 	}
 	o.push(returnVar);
 	let deprecated: string | undefined = undefined;
+	let useTemplate = vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate") === true;
 	if (properties.deprecated) {
 		let matches = comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*/g);
 		deprecated = "";
 		if (matches) {
 			matches.forEach(match => deprecated += match);
+			useTemplate = false;
 		}
 		else {
-			deprecated = await vscode.window.showInputBox({
-				prompt: "Description for the return of method: " + properties.name,
-				title: "Description for the return of method: " + properties.name
-			});
+			switch(genMode){
+				case GenerationMode.Blanks || GenerationMode.ChatGPT:
+					deprecated="";
+					useTemplate=false;
+				default:
+					if (useTemplate) {
+						deprecated = await vscode.window.showInputBox({
+							prompt: "Path of alternative method to: " + properties.name,
+							title: "Path of alternative method to: " + properties.name
+						});
+					}
+					else {
+						deprecated = await vscode.window.showInputBox({
+							prompt: "Description of the deprecation of method: " + properties.name,
+							title: "Description of the deprecation of method: " + properties.name,
+						});
+					}
+			}
 			if (!deprecated) { deprecated = ""; } //TODO: Finish this
 		}
 	}
+	o.push(deprecated);
+	o.push(useTemplate);
 	return o;
 }
 
