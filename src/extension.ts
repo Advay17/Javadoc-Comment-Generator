@@ -20,6 +20,7 @@ export function activate(context: vscode.ExtensionContext) {
 	// The commandId parameter must match the command field in package.json
 	const commands = [
 		vscode.commands.registerCommand('javadoc-comment-generator.generateCommentsForFile', () => generateJavadocComments(vscode.window.activeTextEditor, chatGPT)),
+		vscode.commands.registerCommand('javadoc-comment-generator.updateCommentsForFile', () => regenerateJavadocComments(vscode.window.activeTextEditor, chatGPT)),
 		vscode.commands.registerCommand('javadoc-comment-generator.deleteJavaDocComments', () => deleteJavaDocComments(vscode.window.activeTextEditor)),
 	];
 
@@ -59,33 +60,36 @@ export async function generateJavadocComments(activeEditor: vscode.TextEditor | 
 }
 
 export async function regenerateJavadocComments(activeEditor: vscode.TextEditor | undefined, chatGPT: OpenAI) {
-	let methods=await getMethods(activeEditor);
-	let quickPickItems = ["Manually Write Comments with AI Suggestions", "Generate Blank Comments"];
-	if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")) {
-		quickPickItems.push("Automatically Create AI Generate Comments");
-	}
-	let mode = (await vscode.window.showQuickPick(quickPickItems));
-	if(methods && mode){
-		let genMode;
-		switch (mode) {
-			case "Automatically Create AI Generate Comments":
-				genMode = GenerationMode.ChatGPT;
-				break;
-			case "Generate Blank Comments":
-				genMode = GenerationMode.Blanks;
-				break;
-			default:
-				genMode = GenerationMode.Normal;
-				break;
+	let methods = await getMethods(activeEditor);
+	if (methods) {
+		let quickPickItems = ["Manually Write Comments with AI Suggestions if Enabled", "Generate Blank Comments"];
+		if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion")) {
+			quickPickItems.push("Automatically Create AI Generate Comments");
 		}
-		handleMethods(activeEditor, methods, genMode, chatGPT);
+		let mode = (await vscode.window.showQuickPick(quickPickItems));
+		if (mode) {
+			let genMode;
+			switch (mode) {
+				case "Automatically Create AI Generate Comments":
+					genMode = GenerationMode.ChatGPT;
+					break;
+				case "Generate Blank Comments":
+					genMode = GenerationMode.Blanks;
+					break;
+				default:
+					genMode = GenerationMode.Normal;
+					break;
+			}
+			handleRegeneratingMethods(activeEditor, methods, genMode, chatGPT);
+		}
 	}
 }
 
+
 enum GenerationMode {
-	Normal,
-	Blanks,
-	ChatGPT
+	Normal, //Generate comments manually with ai suggestions
+	Blanks, //Generate blank comments
+	ChatGPT //Use ChatGPT to generate comments
 }
 /**
  * Deletes all javadoc comments in a file
@@ -94,7 +98,7 @@ enum GenerationMode {
 export function deleteJavaDocComments(activeEditor: vscode.TextEditor | undefined) {
 	if (activeEditor) {
 		let classText = activeEditor?.document.getText() as string;
-		let matches = [...classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)].reverse();
+		let matches = [...classText.matchAll(/\/\*\*(.*?)\*\/\s*/gs)];
 		activeEditor?.edit(editBuilder => matches.forEach(match => editBuilder.delete(new vscode.Range(
 			activeEditor?.document.positionAt(match.index) as vscode.Position,
 			activeEditor?.document.positionAt(match.index + match[0].toString().length) as vscode.Position))));
@@ -133,6 +137,61 @@ export async function getMethods(activeEditor: vscode.TextEditor | undefined): P
 export async function addMethodsToArray(methods: vscode.DocumentSymbol[], symbol: vscode.DocumentSymbol) {
 	symbol.children.filter((child) => [vscode.SymbolKind.Function, vscode.SymbolKind.Method, vscode.SymbolKind.Constructor].includes(child.kind)).forEach((method) => methods.push(method));
 	symbol.children.filter((child) => [vscode.SymbolKind.Class, vscode.SymbolKind.Enum].includes(child.kind)).forEach((child) => addMethodsToArray(methods, child));
+}
+
+export async function handleRegeneratingMethods(activeEditor: vscode.TextEditor | undefined, methods: vscode.DocumentSymbol[], generationMode: GenerationMode, chatGPT: OpenAI) {
+	for (let method of methods) {
+		if (activeEditor?.document.getText(method.range).includes("/**")) {
+			let properties = new MethodProperties(method, activeEditor);
+			let comment = (activeEditor?.document.getText(method.range).match(/\/\*\*.*\*\//s) as RegExpMatchArray)[0];
+			console.log(comment);
+			let methodProperties = await regenerateComment(comment, properties, chatGPT, generationMode);
+			let indent = activeEditor?.document?.getText(new vscode.Range(method.range.start.with({ character: 0 }), method.range.start)).replace(/[^\s]/g, "");
+			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as { [id: string]: string }, methodProperties[2] as string, methodProperties[3] as string, indent as string, methodProperties[4] as boolean);
+			activeEditor.edit(editBuilder => {
+				let sP = activeEditor.document.positionAt(activeEditor.document.offsetAt(method.range.start) + activeEditor?.document.getText(method.range).indexOf("/**"));
+				let eP = activeEditor.document.positionAt(activeEditor.document.offsetAt(method.range.start) + activeEditor?.document.getText(method.range).search(/(?<=\*\/\s*)\s(?=[^\s])/)-1);
+				editBuilder.replace(new vscode.Range(sP, eP), methodDoc);
+			});
+		}
+		else if (vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateNewWhileUpdatingOld") === "true" &&
+			!(vscode.workspace.getConfiguration().get("javadoc-comment-generator.includeOverridingMethods") === "true" && activeEditor?.document?.getText(method.range).includes("@Override")) &&
+			!(vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateCommentsForMainMethod") === "true" && /public +static +void +main\(String(\[\])? *args(\[\])??\)/g.test(activeEditor?.document?.getText(method.range) as string))) {
+			console.log(method);
+			activeEditor?.revealRange(method.range);
+			let indent = activeEditor?.document?.getText(new vscode.Range(method.range.start.with({ character: 0 }), method.range.start)).replace(/[^\s]/g, "");
+			let params: string[] | undefined = [];
+			let returnVar = !(method.detail.includes("void") || method.kind === vscode.SymbolKind.Constructor);
+			let deprecated = (activeEditor?.document?.getText(method.range).includes("@Deprecated"));
+			if (!method.name.includes("()")) { //This is so janky
+				params = listParams(method.name, activeEditor?.document?.getText(method.range) as string);
+			}
+			let methodDoc;
+			switch (generationMode) {
+				case GenerationMode.Blanks:
+					let blankParamDict: { [id: string]: string } = {};
+					for (let param of params as string[]) {
+						blankParamDict[param] = "";
+					}
+					methodDoc = createJavaDocString("", blankParamDict, (returnVar) ? "" : undefined, (deprecated) ? "" : undefined, indent as string, false);
+					break;
+				case GenerationMode.ChatGPT:
+					let gptParamDict: { [id: string]: string } = {};
+					let methodText = activeEditor?.document.getText(method.range) as string;
+					for (let param of params as string[]) {
+						gptParamDict[param] = await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${methodText}`, chatGPT);
+					}
+					methodDoc = createJavaDocString(await promptChatGPT(`Write a description of the following method:\n${methodText}`, chatGPT), gptParamDict, (returnVar) ? await promptChatGPT(`Write a description for the return value of the following method:\n${methodText}`, chatGPT) : undefined, (deprecated) ? "" : undefined, indent as string);
+					break;
+				default:
+					let methodProperties = await promptUser(method.name, params, returnVar, deprecated, chatGPT, activeEditor?.document.getText(method.range) as string);
+					methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as { [id: string]: string }, methodProperties[2] as string, methodProperties[3] as string, indent as string, vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate") === true);
+					break;
+			}
+			console.log(methodDoc);
+			await activeEditor?.edit((editBuilder) => editBuilder.insert(method.range.start, methodDoc));
+		}
+	}
 }
 /**
  * For each method, generates and inserts a javadoc string. Iterates in reverse order to prevent messing up of ranges.
@@ -386,7 +445,7 @@ export function splitLines(str: string, maxCharacters: number, firstLineMaxChara
  * @param chatGPT OpenAI client
  * @returns A promise for an array of text for a javadoc comment, to be used with 
  */
-export async function getJavadocCommentFromComment(comment: string, properties: MethodProperties, chatGPT: OpenAI, genMode: GenerationMode): Promise<({ [id: string]: string; } | string | undefined | boolean)[]> {
+export async function regenerateComment(comment: string, properties: MethodProperties, chatGPT: OpenAI, genMode: GenerationMode): Promise<({ [id: string]: string; } | string | undefined | boolean)[]> {
 	let o = [];
 	let usingGPT = vscode.workspace.getConfiguration().get("javadoc-comment-generator.generateAISuggestion") === "true";
 	let methodDesc: undefined | string = "";
@@ -396,7 +455,7 @@ export async function getJavadocCommentFromComment(comment: string, properties: 
 	else {
 		comment.match(/(?<=(\n\s*\*[ 	]*)+)(?<!@(\s|.)*)[^\s@\/].*/g)?.forEach((match) => methodDesc += match);
 	}
-	if (/\s*/.test(methodDesc)) {
+	if (/\s*$/.test(methodDesc)) {
 		switch (genMode) {
 			case GenerationMode.Blanks:
 				methodDesc = "";
@@ -414,7 +473,7 @@ export async function getJavadocCommentFromComment(comment: string, properties: 
 	o.push(methodDesc);
 	let paramDict: { [id: string]: string } = {};
 	for (let param of properties.parameters) {
-		let matches = comment.match(new RegExp(`(?<=@param[ 	]+${param}\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*`, "g"));
+		let matches = comment.match(new RegExp(`(?<=@param[ 	]+${param}\\s+((.*\\n\\s*\\*\\s*[^@\\s])*(.*\\n*\\s*\\*\\s*)|.*))[^@\\s].*`, "g")); //This is not a good regex, I hate it
 		if (matches !== null) {
 			matches.forEach((match) => paramDict[param] += match);
 		}
@@ -470,10 +529,10 @@ export async function getJavadocCommentFromComment(comment: string, properties: 
 			useTemplate = false;
 		}
 		else {
-			switch(genMode){
+			switch (genMode) {
 				case GenerationMode.Blanks || GenerationMode.ChatGPT:
-					deprecated="";
-					useTemplate=false;
+					deprecated = "";
+					useTemplate = false;
 				default:
 					if (useTemplate) {
 						deprecated = await vscode.window.showInputBox({

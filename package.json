@@ -26,6 +26,11 @@
         "category": "Javadoc Comment Generator"
       },
       {
+        "command": "javadoc-comment-generator.updateCommentsForFile",
+        "title": "Update Comments for this File",
+        "category": "Javadoc Comment Generator"
+      },
+      {
         "command": "javadoc-comment-generator.deleteJavaDocComments",
         "title": "Delete all Javadoc Comments in this File",
         "category": "Javadoc Comment Generator"
@@ -51,6 +56,12 @@
           "type": "boolean",
           "default": "true",
           "description": "Determines if comments should be generated for the main method."
+        },
+        "javadoc-comment-generator.generateNewWhileUpdatingOld": {
+          "title": "Generate New Comments While Updating Old Comments",
+          "type": "boolean",
+          "default": "false",
+          "description": "Determines if methods without comments should have comments generated while updating old methods."
         },
         "javadoc-comment-generator.maxCharactersPerLine": {
           "title": "Maximum Characters Per Line",
