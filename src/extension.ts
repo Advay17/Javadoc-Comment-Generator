@@ -144,13 +144,14 @@ export async function handleRegeneratingMethods(activeEditor: vscode.TextEditor 
 		if (activeEditor?.document.getText(method.range).includes("/**")) {
 			let properties = new MethodProperties(method, activeEditor);
 			let comment = (activeEditor?.document.getText(method.range).match(/\/\*\*.*\*\//s) as RegExpMatchArray)[0];
-			console.log(comment);
 			let methodProperties = await regenerateComment(comment, properties, chatGPT, generationMode);
 			let indent = activeEditor?.document?.getText(new vscode.Range(method.range.start.with({ character: 0 }), method.range.start)).replace(/[^\s]/g, "");
 			let methodDoc = createJavaDocString(methodProperties[0] as string, methodProperties[1] as { [id: string]: string }, methodProperties[2] as string, methodProperties[3] as string, indent as string, methodProperties[4] as boolean);
 			activeEditor.edit(editBuilder => {
 				let sP = activeEditor.document.positionAt(activeEditor.document.offsetAt(method.range.start) + activeEditor?.document.getText(method.range).indexOf("/**"));
-				let eP = activeEditor.document.positionAt(activeEditor.document.offsetAt(method.range.start) + activeEditor?.document.getText(method.range).search(/(?<=\*\/\s*)\s(?=[^\s])/)-1);
+				let eP = activeEditor.document.positionAt(activeEditor.document.offsetAt(method.range.start) + activeEditor?.document.getText(method.range).search(/(?<=\*\/\s*)\s(?=[^\s])/));
+				console.log(activeEditor.document.getText(new vscode.Range(sP, eP)));
+				console.log(methodDoc);
 				editBuilder.replace(new vscode.Range(sP, eP), methodDoc);
 			});
 		}
@@ -473,7 +474,7 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 	o.push(methodDesc);
 	let paramDict: { [id: string]: string } = {};
 	for (let param of properties.parameters) {
-		let matches = comment.match(new RegExp(`(?<=@param[ 	]+${param}\\s+((.*\\n\\s*\\*\\s*[^@\\s])*(.*\\n*\\s*\\*\\s*)|.*))[^@\\s].*`, "g")); //This is not a good regex, I hate it
+		let matches = comment.match(new RegExp(`(?<=@param[ 	]+${param}\\s+((.*\\n\\s*\\*\\s*[^@\\s])*(.*\\n*\\s*\\*\\s*)|.*))[^@\\s\*\/].*`, "g")); //This is not a good regex, I hate it
 		if (matches !== null) {
 			matches.forEach((match) => paramDict[param] += match);
 		}
@@ -497,7 +498,7 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 	o.push(paramDict);
 	let returnVar: string | undefined = undefined;
 	if (properties.returnVar) {
-		let matches = comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*/g);
+		let matches = comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s\*\/].*/g);
 		returnVar = "";
 		if (matches) {
 			matches.forEach(match => returnVar += match);
@@ -522,7 +523,7 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 	let deprecated: string | undefined = undefined;
 	let useTemplate = vscode.workspace.getConfiguration().get("javadoc-comment-generator.useDeprecationTemplate") === true;
 	if (properties.deprecated) {
-		let matches = comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s].*/g);
+		let matches = comment.match(/(?<=@return\s+((.*\n\s*\*\s*[^@\s])*(.*\n*\s*\*\s*)|.*))[^@\s\*\/].*/g);
 		deprecated = "";
 		if (matches) {
 			matches.forEach(match => deprecated += match);
