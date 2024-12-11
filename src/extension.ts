@@ -453,9 +453,9 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 		methodDesc = (comment.match(/(?<=\/\*\*).*(?=\*\/)/) as RegExpMatchArray)[0];
 	}
 	else {
-		comment.match(/(?<=(\n\s*\*[ 	]*)+)(?<!@(\s|.)*)[^\s@\/].*/g)?.forEach((match) => methodDesc += match);
+		comment.match(/(?<=(\n\s*\*[ 	]*)+)(?<!@(\s|.)*)[^\s@\/].*/g)?.forEach((match) => {methodDesc += match; console.log(match)});
 	}
-	if (/\s*$/.test(methodDesc)) {
+	if (/^\s*$/.test(methodDesc)) {
 		switch (genMode) {
 			case GenerationMode.Blanks:
 				methodDesc = "";
