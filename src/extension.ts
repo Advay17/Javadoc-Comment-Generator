@@ -460,8 +460,10 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 		switch (genMode) {
 			case GenerationMode.Blanks:
 				methodDesc = "";
+				break;
 			case GenerationMode.ChatGPT:
 				methodDesc = await promptChatGPT(`Write a description of the following method:\n${properties.text}`, chatGPT);
+				break;
 			default:
 				methodDesc = await vscode.window.showInputBox({
 					prompt: "Description of the method: " + properties.name,
@@ -482,8 +484,10 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 			switch (genMode) {
 				case GenerationMode.Blanks:
 					paramDict[param] = "";
+					break;
 				case GenerationMode.ChatGPT:
 					paramDict[param] = await promptChatGPT(`Write a description for the parameter: ${param} following method:\n${properties.text}`, chatGPT);
+					break;
 				default:
 					let desc = await vscode.window.showInputBox({
 						prompt: "Description for the parameter: " + param + " of method: " + properties.name,
@@ -507,8 +511,10 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 			switch (genMode) {
 				case GenerationMode.Blanks:
 					returnVar = "";
+					break;
 				case GenerationMode.ChatGPT:
 					returnVar = await promptChatGPT(`Write a description for the return value of the following method:\n${properties.text}`, chatGPT);
+					break;
 				default:
 					returnVar = await vscode.window.showInputBox({
 						prompt: "Description for the return of method: " + properties.name,
@@ -534,6 +540,7 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 				case GenerationMode.Blanks || GenerationMode.ChatGPT:
 					deprecated = "";
 					useTemplate = false;
+					break;
 				default:
 					if (useTemplate) {
 						deprecated = await vscode.window.showInputBox({
