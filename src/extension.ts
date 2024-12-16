@@ -410,7 +410,7 @@ export function createJavaDocString(description: string, parameters: { [id: stri
  * @param str String to split
  * @param maxCharacters Maximum number of characters per line
  * @param firstLineMaxCharacters Maximum number of characters in the first line(useful for tags);
- * @returns 
+ * @returns Array of split lines
  */
 export function splitLines(str: string, maxCharacters: number, firstLineMaxCharacters = maxCharacters): string[] {
 	let lines: string[] = [];
@@ -563,12 +563,20 @@ export async function regenerateComment(comment: string, properties: MethodPrope
 	return o;
 }
 
+/**
+ * Class to easily store method properties
+ */
 class MethodProperties { //TODO: Refactor methods to use MethodProperties(it's just 1 I think)
 	name: string = "";
 	text: string = "";
 	parameters: string[] = [];
 	returnVar: boolean = false;
 	deprecated: boolean = false;
+	/**
+	 * Constructs a MethodProperties object from a vscode symbol
+	 * @param method The method to generate properties for
+	 * @param activeEditor The active editor: READ: document
+	 */
 	constructor(method: vscode.DocumentSymbol, activeEditor: vscode.TextEditor) {
 		this.name = method.name;
 		this.text = activeEditor.document.getText(method.range);

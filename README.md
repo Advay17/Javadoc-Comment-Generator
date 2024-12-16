@@ -3,7 +3,7 @@ This is a small extension that I made to automatically generate javadoc comments
 # Features
 Uses method headers of javadoc comments to write comments based on what the user wants. Will improve this in the future.
 # Requirements
-None!
+VSCode needs a Java language extension such as Red Hat's Java language support(recommended).
 # Installation
 Coming soon!
 # Releases
