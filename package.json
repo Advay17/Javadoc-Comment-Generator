@@ -3,7 +3,7 @@
   "displayName": "Javadoc Comment Generator",
   "description": "An extension to generate Javadoc Comments, both manually and using ChatGPT",
   "author": "Kavin Muralikrishnan",
-  "publisher": "Advay17",
+  "publisher": "Advay",
   "license": "GPL-3.0-only",
   "repository": {
     "type": "git",
