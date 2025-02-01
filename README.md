@@ -5,6 +5,6 @@ Uses method headers of javadoc comments to write comments based on what the user
 # Requirements
 VSCode needs a Java language extension such as Red Hat's Java language support(recommended).
 # Installation
-Coming soon!
+Download as an extension on vscode.
 # Releases
 Coming Soon!
